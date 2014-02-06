@@ -3,6 +3,11 @@
 #ifndef NETWORKING_HH
 #define NETWORKING_HH
 
+#include <string>
+
+/* send message to socket
+ * return bytes sent */
+int send_message(int sockfd, std::string message);
 
 /* create and connect TCP socket
  * return file descriptor */

@@ -1,9 +1,9 @@
 CPP = g++
-FLAGS = -std=c++0x -Wall -Wextra
+FLAGS = -std=c++0x -Wall -Wextra -pedantic
 
-objects_client = client.o networking.o
+objects_client = client.o networking.o http.o
 
-objects = client.o networking.o
+objects = client.o networking.o http.o
 
 PROGS = client
 
@@ -14,12 +14,16 @@ client: $(objects_client)
 
 client.o: client.cc
 	$(CPP) -c $^ $(FLAGS)
+	
+http.o: http.cc
+	$(CPP) -c $^ $(FLAGS)
 
 networking.o: networking.cc
 	$(CPP) -c $^ $(FLAGS)
 
 # header dependencies
-client.o: networking.hh
+client.o: networking.hh http.hh
+http.o: http.hh
 networking.o: networking.hh
 
 .PHONY: clean

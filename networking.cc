@@ -3,6 +3,7 @@
 #include <iostream>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
 #include "networking.hh"
@@ -28,6 +29,15 @@ void print_address(const char *prefix, const struct addrinfo *res)
 
 	const char *ret = inet_ntop(res->ai_family, address, outbuf, sizeof(outbuf));
 	std::cout << prefix << " " << ret << std::endl;
+}
+
+int send_message(int sockfd, std::string message)
+{
+	const char* msg = message.c_str();
+	int n;
+	if ((n = write(sockfd, msg, strlen(msg)+1)) < 0)
+		std::cerr << "Error in writing to socket" << std::endl;
+	return n;
 }
 
 int tcp_connect(const char *hostname, const char *service)
