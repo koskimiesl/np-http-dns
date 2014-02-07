@@ -9,9 +9,10 @@
 #include "networking.hh"
 
 
-/* print address used */
 void print_address(const char *prefix, const struct addrinfo *res)
 {
+	/* slightly modified from lecture example */
+
 	char outbuf[80];
 	struct sockaddr_in *sin = (struct sockaddr_in *)res->ai_addr;
 	struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)res->ai_addr;
@@ -42,6 +43,8 @@ int send_message(int sockfd, std::string message)
 
 int tcp_connect(const char *hostname, const char *service)
 {
+	/* slightly modified from lecture example */
+
 	int	sockfd, addrret;
 	struct addrinfo	hints, *res, *ressave;
 
@@ -63,14 +66,14 @@ int tcp_connect(const char *hostname, const char *service)
 		if (sockfd < 0)
 		{
 			perror("Failed to create socket");
-			continue; /* ignore this one */
+			continue; // ignore this one
 		}
 
 		print_address("Trying to connect", res);
 		if (connect(sockfd, res->ai_addr, res->ai_addrlen) == 0)
-			break; /* success */
+			break; // success
 		perror("Failed to connect");
-		close(sockfd);	/* ignore this one */
+		close(sockfd);	// ignore this one
 	}
 	while ((res = res->ai_next) != NULL);
 

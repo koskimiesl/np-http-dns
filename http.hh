@@ -42,6 +42,7 @@ public:
 	void dump_values() const;
 
 	http_status_code status_code;
+	size_t content_length;
 
 private:
 
@@ -52,8 +53,8 @@ private:
 	std::string filename;
 	std::string host;
 	std::string content_type;
-	size_t content_length;
 	std::string username;
+	std::string server;
 	std::string payload;
 };
 

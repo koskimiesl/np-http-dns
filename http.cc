@@ -18,12 +18,12 @@ http_message::http_message(http_method m, std::string f, std::string h, std::str
 bool http_message::parse_resp_header(std::string header)
 {
 	using namespace std;
-	cout << "Parsing header:" << endl << header;
 	istringstream headeriss(header);
 	string line;
+	bool contentlen = false; // is content length parsed successfully?
+	status_code = http_status_code::_UNSUPPORTED_;
 	while (getline(headeriss, line))
 	{
-		cout << "Parsing line: " << line << endl;
 		istringstream lineiss(line);
 
 		// tokens separated by a white space into a vector
@@ -44,8 +44,6 @@ bool http_message::parse_resp_header(std::string header)
 					status_code = http_status_code::_200_OK_;
 				else if (code == "404" && msg == "Not Found")
 					status_code = http_status_code::_404_NOT_FOUND_;
-				else
-					status_code = http_status_code::_UNSUPPORTED_;
 			}
 			else if (*it == "Content-Length:") // read one more token
 			{
@@ -53,10 +51,28 @@ bool http_message::parse_resp_header(std::string header)
 				{
 					istringstream iss(*it);
 					iss >> content_length; // convert to size_t
+					contentlen = true;
 				}
+			}
+			else if (*it == "Content-Type:") // read one more token
+			{
+				if (it++ != tokens.end())
+					content_type = *it;
+			}
+			else if (*it == "Iam:") // read one more token
+			{
+				if (it++ != tokens.end())
+					username = *it;
+			}
+			else if (*it == "Server:") // read one more token
+			{
+				if (it++ != tokens.end())
+					server = *it;
 			}
 		}
 	}
+	if (!contentlen)
+		return false;
 	return true;
 }
 
@@ -79,6 +95,7 @@ void http_message::dump_values() const
 			  << "content type: " << content_type << std::endl
 			  << "content length: " << content_length << std::endl
 			  << "username: " << username << std::endl
+			  << "server: " << server << std::endl
 			  << "payload: " << payload << std::endl;
 }
 
