@@ -18,7 +18,6 @@
 int main(int argc, char *argv[])
 {
 	int sockfd, sent, recvd;
-	char buffer[RECVBUFSIZE];
 
 	if (argc != 6)
 	{
@@ -30,29 +29,65 @@ int main(int argc, char *argv[])
 	std::string method(argv[1]);
 	std::transform(method.begin(), method.end(), method.begin(), ::toupper);
 
-	http_message httpmsg;
+	http_message request;
+
 	if (method == "GET")
-		httpmsg = http_message(http_method::GET, argv[2], argv[3], argv[5]);
+	{
+		request = http_message(http_method::GET, argv[2], argv[3], argv[5]);
+		std::string message = request.create_header();
+
+		sockfd = tcp_connect(argv[3], argv[4]);
+		if (sockfd < 0)
+			return -1;
+
+		if ((sent = send_message(sockfd, message)) < 0)
+			return -1;
+	}
 	else if (method == "PUT")
-		httpmsg = http_message(http_method::PUT, argv[2], argv[3], argv[5]);
+	{
+		std::ifstream file(argv[2]);
+		if (!file.good())
+		{
+			std::cerr << "File error: " << argv[2] << std::endl;
+			return -1;
+		}
+
+		// determine file size
+		file.seekg(0, file.end);
+		int length = file.tellg();
+		file.seekg(0, file.beg);
+
+		char* payload = new char[length]; // allocate memory for payload
+		file.read(payload, length);
+		if (file.gcount() != length)
+		{
+			std::cerr << "Failed to read file into memory" << std::endl;
+			return -1;
+		}
+		std::cout << "Successfully read " << file.gcount() << " characters into memory" << std::endl;
+		file.close();
+		request = http_message(http_method::PUT, argv[2], length, payload, argv[3], argv[5]);
+		std::string header = request.create_header();
+
+		sockfd = tcp_connect(argv[3], argv[4]);
+		if (sockfd < 0)
+			return -1;
+
+		if ((sent = send_message(sockfd, header, payload, length)) < 0)
+			return -1;
+		delete[] payload; // free memory
+	}
 	else
 	{
-		std::cerr << "Method not supported" << std::endl;
+		std::cerr << "'" << method << "' method not supported" << std::endl;
 		return -1;
 	}
 
-	std::string message = httpmsg.create_request();
-
-	sockfd = tcp_connect(argv[3], argv[4]);
-	if (sockfd < 0)
-		return -1;
-
-	std::cout << std::endl << "Sending message:" << std::endl << message << std::endl;
-	if ((sent = send_message(sockfd, message)) < 0)
-		return -1;
 	std::cout << sent << " bytes sent" << std::endl;
 
-	// first read response header
+
+	// handle response
+	char buffer[RECVBUFSIZE];
 	bool emptylinefound = false;
 	std::string readtotal; // total message read from socket so far
 	std::string delimiter("\r\n\r\n");
@@ -83,10 +118,16 @@ int main(int argc, char *argv[])
 	}
 	http_message response;
 	if (!response.parse_resp_header(header))
-		std::cerr << "Failed to parse header" << std::endl;
-	else
 	{
-		if (response.status_code == http_status_code::_200_OK_)
+		std::cerr << "Failed to parse header" << std::endl;
+		return -1;
+	}
+
+	if (request.method == http_method::GET)
+	{
+		switch (response.status_code)
+		{
+		case http_status_code::_200_OK_:
 		{
 			std::string payload_so_far = readtotal.substr(found + delimiter.length());
 			size_t payload_read = payload_so_far.length();
@@ -112,8 +153,34 @@ int main(int argc, char *argv[])
 				perror("Error reading from socket");
 				return -1;
 			}
+			break;
+		}
+		case http_status_code::_404_NOT_FOUND_:
+			std::cout << "File not found from server" << std::endl;
+			break;
+		default:
+			std::cout << "Error occured" << std::endl;
+			break;
 		}
 	}
-	response.dump_values();
+	else if (request.method == http_method::PUT)
+	{
+		switch (response.status_code)
+		{
+		case http_status_code::_200_OK_:
+			std::cout << "File updated successfully on server" << std::endl;
+			break;
+		case http_status_code::_201_CREATED_:
+			std::cout << "File created successfully on server" << std::endl;
+			break;
+		default:
+			std::cout << "Error occured" << std::endl;
+			break;
+		}
+	}
+
+	if (close(sockfd) < 0)
+		perror("Error closing socket");
+
 	return 0;
 }

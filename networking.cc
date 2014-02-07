@@ -34,11 +34,26 @@ void print_address(const char *prefix, const struct addrinfo *res)
 
 int send_message(int sockfd, std::string message)
 {
+	std::cout << std::endl << "Sending message:" << std::endl << message << std::endl;
 	const char* msg = message.c_str();
 	int n;
 	if ((n = write(sockfd, msg, strlen(msg)+1)) < 0)
 		std::cerr << "Error in writing to socket" << std::endl;
 	return n;
+}
+
+int send_message(int sockfd, std::string header, const char* payload, size_t pllength)
+{
+	std::cout << std::endl << "Sending header:" << std::endl << header << std::endl;
+	const char* msg = header.c_str();
+	int hsent, psent;
+	if ((hsent = write(sockfd, msg, strlen(msg))) < 0)
+		std::cerr << "Error in writing to socket" << std::endl;
+	if ((psent = write(sockfd, payload, pllength+1)) < 0)
+		std::cerr << "Error in writing to socket" << std::endl;
+
+	std::cout << psent << " bytes of payload sent" << std::endl;
+	return hsent + psent;
 }
 
 int tcp_connect(const char *hostname, const char *service)
