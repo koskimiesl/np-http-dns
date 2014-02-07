@@ -10,12 +10,12 @@
 #include "http.hh"
 #include "networking.hh"
 
-#define RECVBUFSIZE 100
+#define RECVBUFSIZE 1000
 
 int main(int argc, char *argv[])
 {
-	int sockfd, n;
-	char buf[RECVBUFSIZE] = { 0 };
+	int sockfd, sent, recvd;
+	char buffer[RECVBUFSIZE];
 
 	if (argc < 6)
 	{
@@ -29,30 +29,49 @@ int main(int argc, char *argv[])
 		return -1;
 
 	http_message httpmsg(http_method::GET, argv[2], argv[3], argv[5]);
-	std::string message = httpmsg.to_string();
+	std::string message = httpmsg.create_request();
 	std::cout << "Sending message:" << std::endl << message << std::endl;
 
-	n = send_message(sockfd, message);
-	std::cout << n << " bytes sent" << std::endl;
+	if ((sent = send_message(sockfd, message)) < 0)
+		return -1;
+	std::cout << sent << " bytes sent" << std::endl;
 
 	// first read response header
-	size_t buf_idx = 0;
-	while (buf_idx < RECVBUFSIZE && 1 == read(sockfd, &buf[buf_idx], 1))
+	bool emptylinefound = false;
+	std::string readtotal; // total message read from socket so far
+	std::string delimiter("\r\n\r\n");
+	std::string header;
+	while ((recvd = read(sockfd, buffer, RECVBUFSIZE)) > 0 && !emptylinefound)
 	{
-	    if (buf_idx > 0          &&
-	        '\n' == buf[buf_idx] &&
-	        '\n' == buf[buf_idx - 1])
-	    {
-	    	std::cout << "emtpy line.." << std::endl;
-	    	break;
-	    }
-	    buf_idx++;
+		std::string chunk(buffer, recvd);
+		readtotal += chunk;
+		size_t found = readtotal.find(delimiter);
+		if (found != std::string::npos)
+		{
+			emptylinefound = true;
+			std::cout << "found at " << found << std::endl;
+			std::cout << readtotal << std::endl;
+			header = readtotal.substr(0, found + delimiter.length()); // include empty line to header
+		}
 	}
-	if (n < 0)
+	if (recvd < 0)
 	{
-		perror("read error");
+		perror("Error reading from socket");
 		return -1;
 	}
-
+	if (!emptylinefound)
+	{
+		std::cerr << "Empty line not found" << std::endl;
+		return -1;
+	}
+	http_message response;
+	if (!response.parse_resp_header(header))
+		std::cerr << "Parsing failed" << std::endl;
+	else
+	{
+		if (response.status_code == http_status_code::_200_OK_)
+			std::cout << "OK!" << std::endl;
+	}
+	response.dump_values();
 	return 0;
 }

@@ -12,22 +12,36 @@ enum http_method
 	PUT
 };
 
+enum http_status_code
+{
+	_200_OK_,
+	_404_NOT_FOUND_,
+	_UNSUPPORTED_
+};
+
 class http_message
 {
 public:
 	/* supported protocol */
 	static const std::string protocol;
 
-	/* constructor */
+	/* constructors */
+	http_message();
 	http_message(http_method method, std::string filename, std::string host, std::string username);
 
-	void set_header(std::string header);
+	/* parse response header and return its status code */
+	bool parse_resp_header(std::string header);
 
 	/* set payload for message */
 	void set_payload(std::string payload);
 
-	/* returns the whole message */
-	std::string to_string() const;
+	/* create and return message */
+	std::string create_request() const;
+
+	/* dump object member values */
+	void dump_values() const;
+
+	http_status_code status_code;
 
 private:
 
