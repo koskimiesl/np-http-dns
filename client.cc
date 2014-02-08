@@ -1,6 +1,7 @@
 /*
- * HTTP DNS client
+ * Simple HTTP client supporting GET and PUT with plain text payload
  */
+
 #include <algorithm>
 #include <cstring>
 #include <fstream>
