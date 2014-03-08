@@ -1,7 +1,7 @@
 /* HTTP protocol */
 
-#ifndef HTTP_HH
-#define HTTP_HH
+#ifndef NP_HTTP_HH
+#define NP_HTTP_HH
 
 #include <string>
 

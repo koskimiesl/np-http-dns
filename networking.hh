@@ -1,7 +1,7 @@
 /* Networking helper functions */
 
-#ifndef NETWORKING_HH
-#define NETWORKING_HH
+#ifndef NP_NETWORKING_HH
+#define NP_NETWORKING_HH
 
 #include <string>
 
