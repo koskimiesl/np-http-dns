@@ -1,10 +1,10 @@
 CPP = g++
 FLAGS = -std=c++0x -Wall -Wextra -pedantic
 
-objects_server = server.o daemon.o
+objects_server = server.o daemon.o helpers.o
 objects_client = client.o networking.o http.o
 
-objects = server.o client.o networking.o http.o daemon.o
+objects = server.o client.o networking.o http.o daemon.o helpers.o
 
 PROGS = server client
 
@@ -30,12 +30,17 @@ http.o: http.cc
 
 networking.o: networking.cc
 	$(CPP) -c $^ $(FLAGS)
+	
+helpers.o: helpers.cc
+	$(CPP) -c $^ $(FLAGS)
 
 # header dependencies
-server.o: daemon.hh
+server.o: daemon.hh helpers.hh
 client.o: networking.hh http.hh
 http.o: http.hh
 networking.o: networking.hh
+daemon.o: daemon.hh
+helpers.o: helpers.hh
 
 .PHONY: clean
 clean:

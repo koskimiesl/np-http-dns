@@ -1,30 +1,38 @@
 #include <arpa/inet.h>
 #include <cstdio>
 #include <cstring>
+#include <iostream>
 #include <syslog.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
 #include "daemon.hh"
+#include "helpers.hh"
 
 #define LISTENQLEN 5
 #define BUFSIZE 1024
 
-int main()
+int main(int argc, char *argv[])
 {
-	daemon_init("httpserver", LOG_WARNING);
-	syslog(LOG_NOTICE, "First daemon started.");
-	sleep(30);
-	syslog (LOG_NOTICE, "First daemon terminating...");
-	closelog();
-	return 0;
+	char port[PORTLEN];
+	bool debug = false; // becomes a daemon by default
+	if (get_server_opts(argc, argv, port, debug) < 0)
+		return -1;
 
-	/*
+	if (!debug)
+	{
+		std::cout << "starting daemon..." << std::endl;
+		if (daemon_init("httpserver", LOG_WARNING) < 0)
+			return -1;
+		syslog(LOG_NOTICE, "started");
+		closelog();
+	}
+
 	int listenfd, maxfd, numfds;
 	int connfd = -1;
 	socklen_t len;
 	struct sockaddr_in	servaddr, cliaddr;
-	fd_set readset; // file descriptors to watch to see if read won't block
+	fd_set readset; // fd set to watch to see if read won't block
 	struct timeval timeout;
 	char buff[80];
 	char recvbuf[BUFSIZE];
@@ -63,7 +71,7 @@ int main()
 		if (connfd >= 0)
 			FD_SET(connfd, &readset); // add client connection fd to the set
 
-		// on Linux, select modifies timeout -> reinitialize
+		// on Linux, select modifies timeout -> reinitialize it
 		timeout.tv_sec = 2;
 		timeout.tv_usec = 0;
 
@@ -81,7 +89,8 @@ int main()
 				perror("accept");
 				return -1;
 			}
-			printf("connection from %s, port %d\n", inet_ntop(AF_INET, &cliaddr.sin_addr, buff, sizeof(buff)), ntohs(cliaddr.sin_port));
+			std::cout << "connection from " << inet_ntop(AF_INET, &cliaddr.sin_addr, buff, sizeof(buff))
+					  << ", port " << ntohs(cliaddr.sin_port) << std::endl;
 
 			if (connfd >= maxfd)
 				maxfd = connfd + 1;
@@ -92,19 +101,17 @@ int main()
 			memset(recvbuf, 0, BUFSIZE);
 			int n = read(connfd, recvbuf, BUFSIZE);
 			if (n < 0)
-				perror("Error reading from socket");
+				perror("read");
 			else
-				printf("server received %d bytes: %s", n, recvbuf);
+				std::cout << "server received " << n << " bytes: " << std::endl << recvbuf << std::endl;
 
-			// close accepted client socket and start waiting for new client
-			// note: listenfd will remain open
+			// close client socket and start waiting for new client
 			close(connfd);
 			connfd = -1;
-			printf("closed connection\n");
+			std::cout << "closed connection" << std::endl;
 		}
 
 		if (numfds == 0)
-			printf("Timer expired\n");
+			std::cout << "timer expired" << std::endl;
 	}
-	*/
 }
