@@ -1,19 +1,36 @@
+#include <climits>
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <unistd.h>
 
 #include "helpers.hh"
 
-int get_server_opts(int argc, char** argv, char* port, bool& debug)
+#define MAXPORT 65535
+
+int get_server_opts(int argc, char** argv, unsigned short& port, bool& debug)
 {
 	bool portgiven = false;
+	unsigned long candidate;
 	char opt;
 	while ((opt = getopt(argc, argv, "p:d")) != -1)
 	{
 		switch (opt)
 		{
 		case 'p':
-			strncpy(port, optarg, PORTLEN);
+			candidate = std::strtoul(optarg, NULL, 0);
+			if (candidate == 0)
+			{
+				std::cerr << "strtoul: conversion failed" << std::endl;
+				break;
+			}
+			if (candidate > MAXPORT)
+			{
+				std::cerr << "error: max port is " << MAXPORT << std::endl;
+				break;
+			}
+			port = (unsigned short) candidate;
+			std::cout << "using port " << port << std::endl;
 			portgiven = true;
 			break;
 		case 'd':

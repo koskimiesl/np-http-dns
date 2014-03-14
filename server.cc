@@ -1,6 +1,8 @@
+#include <algorithm>
 #include <arpa/inet.h>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
 #include <iostream>
 #include <syslog.h>
 #include <sys/socket.h>
@@ -8,13 +10,14 @@
 
 #include "daemon.hh"
 #include "helpers.hh"
+#include "http.hh"
+#include "networking.hh"
 
-#define LISTENQLEN 5
-#define BUFSIZE 1024
+#define RECVBUFSIZE 1024
 
 int main(int argc, char *argv[])
 {
-	char port[PORTLEN];
+	unsigned short port;
 	bool debug = false; // becomes a daemon by default
 	if (get_server_opts(argc, argv, port, debug) < 0)
 		return -1;
@@ -28,41 +31,19 @@ int main(int argc, char *argv[])
 		closelog();
 	}
 
-	int listenfd, maxfd, numfds;
+	int listenfd;
+	if ((listenfd = create_and_listen(port)) < 0)
+		return -1;
+
+	fd_set readset; // set to watch to see if read won't block
 	int connfd = -1;
-	socklen_t len;
-	struct sockaddr_in	servaddr, cliaddr;
-	fd_set readset; // fd set to watch to see if read won't block
 	struct timeval timeout;
+	int numfds;
+	int maxfd = listenfd + 1;
+	socklen_t len;
+	struct sockaddr_in6	cliaddr;
 	char buff[80];
-	char recvbuf[BUFSIZE];
-
-	// create socket for listening
-	if ((listenfd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
-	{
-		perror("socket");
-		return -1;
-	}
-
-	// bind server address to socket
-	memset(&servaddr, 0, sizeof(servaddr));
-	servaddr.sin_family = AF_INET;
-	servaddr.sin_addr.s_addr = htonl(INADDR_ANY); // any interface
-	servaddr.sin_port = htons(5000);
-	if (bind(listenfd, (struct sockaddr*)&servaddr, sizeof(servaddr)) < 0)
-	{
-		perror("bind");
-		return -1;
-	}
-
-	// set socket to passive mode
-	if (listen(listenfd, LISTENQLEN) < 0)
-	{
-		perror("listen");
-		return -1;
-	}
-
-	maxfd = listenfd + 1;
+	char buffer[RECVBUFSIZE];
 
 	while (1)
 	{
@@ -72,7 +53,7 @@ int main(int argc, char *argv[])
 			FD_SET(connfd, &readset); // add client connection fd to the set
 
 		// on Linux, select modifies timeout -> reinitialize it
-		timeout.tv_sec = 2;
+		timeout.tv_sec = 3;
 		timeout.tv_usec = 0;
 
 		if ((numfds = select(maxfd, &readset, NULL, NULL, &timeout)) < 0)
@@ -89,21 +70,69 @@ int main(int argc, char *argv[])
 				perror("accept");
 				return -1;
 			}
-			std::cout << "connection from " << inet_ntop(AF_INET, &cliaddr.sin_addr, buff, sizeof(buff))
-					  << ", port " << ntohs(cliaddr.sin_port) << std::endl;
+			std::cout << "connection from " << inet_ntop(AF_INET6, &cliaddr.sin6_addr, buff, sizeof(buff))
+					  << ", port " << ntohs(cliaddr.sin6_port) << std::endl;
 
 			if (connfd >= maxfd)
 				maxfd = connfd + 1;
 		}
 
-		if (connfd >= 0 && FD_ISSET(connfd, &readset))
+		if (connfd >= 0 && FD_ISSET(connfd, &readset)) // handle client's request
 		{
-			memset(recvbuf, 0, BUFSIZE);
-			int n = read(connfd, recvbuf, BUFSIZE);
-			if (n < 0)
+			// parse request header
+			bool emptylinefound = false;
+			int recvd;
+			std::string readtotal;
+			size_t found; // index of start of delimiter
+			std::string delimiter("\r\n\r\n");
+			std::string header;
+			memset(buffer, 0, RECVBUFSIZE);
+			while (!emptylinefound && (recvd = read(connfd, buffer, RECVBUFSIZE)) > 0)
+			{
+				std::string chunk(buffer, recvd);
+				readtotal += chunk;
+				found = readtotal.find(delimiter);
+				if (found != std::string::npos)
+				{
+					emptylinefound = true;
+					header = readtotal.substr(0, found + delimiter.length()); // include empty line to header
+					std::cout << std::endl << "request header:" << std::endl << header << std::endl;
+				}
+			}
+			if (recvd < 0)
+			{
 				perror("read");
-			else
-				std::cout << "server received " << n << " bytes: " << std::endl << recvbuf << std::endl;
+				return -1;
+			}
+			if (!emptylinefound)
+			{
+				std::cerr << "empty line not found" << std::endl;
+				return -1;
+			}
+			http_message msg(header);
+			if (!msg.parse_req_header())
+			{
+				std::cerr << "failed to parse header" << std::endl;
+				return -1;
+			}
+
+			if (msg.method == http_method::GET)
+			{
+				char* payload = new char[msg.content_length]; // allocate memory for payload
+				std::ifstream fs(msg.filename);
+				fs.read(payload, msg.content_length);
+				if ((size_t)fs.gcount() != msg.content_length)
+				{
+					std::cerr << "failed to read file into memory" << std::endl;
+					return -1;
+				}
+				std::cout << "successfully read " << fs.gcount() << " characters into memory" << std::endl;
+				fs.close();
+
+				if (send_message(connfd, msg.create_resp_header(), payload, msg.content_length) < 0)
+					return -1;
+				delete[] payload; // free memory
+			}
 
 			// close client socket and start waiting for new client
 			close(connfd);

@@ -1,25 +1,107 @@
+#include <cstdio>
+#include <fstream>
 #include <iostream>
 #include <iterator>
 #include <sstream>
+#include <unistd.h>
 #include <vector>
 
 #include "http.hh"
 
 const std::string http_message::protocol = "HTTP/1.1";
-const char* http_message::method_strings[] = {"GET", "PUT"};
+const char* http_message::method_strings[] = {"NOT SET", "GET", "PUT", "UNSUPPORTED"};
+const char* http_message::status_code_strings[] = {"NOT SET", "200 OK", "201 Created", "404 Not Found", "UNSUPPORTED"};
 
 http_message::http_message()
-{ }
+{
+	method = http_method::NOT_SET;
+	status_code = http_status_code::_NOT_SET_;
+}
+
+http_message::http_message(std::string header) : header(header)
+{
+	method = http_method::NOT_SET;
+	status_code = http_status_code::_NOT_SET_;
+}
 
 http_message::http_message(http_method m, std::string f, std::string h, std::string u)
  : method(m), filename(f), host(h), username(u)
-{ }
+{
+	status_code = http_status_code::_NOT_SET_;
+}
 
 http_message::http_message(http_method m, std::string f, size_t s, const char* p, std::string h, std::string u)
  : method(m), filename(f), host(h), username(u)
 {
 	payload = p;
 	content_length = s;
+	status_code = http_status_code::_NOT_SET_;
+}
+
+bool http_message::parse_req_header()
+{
+	using namespace std;
+	istringstream headeriss(header);
+	string line;
+	bool methodsuccess = false; // is method line parsed successfully?
+	bool contentsuccess = false; // are content (type & length) fields parsed successfully?
+	while (getline(headeriss, line))
+	{
+		istringstream lineiss(line);
+		// tokens separated by a white space into a vector
+		vector<string> tokens{istream_iterator<string>{lineiss}, istream_iterator<string>{}};
+		if (tokens.size() > 0)
+		{
+			vector<string>::const_iterator it = tokens.begin();
+			if (*it == "GET")
+			{
+				method = http_method::GET;
+				if (it++ != tokens.end())
+				{
+					if (access((*it).c_str(), R_OK) < 0) // check file existence and read permission
+					{
+						perror("access");
+						status_code = http_status_code::_404_NOT_FOUND_;
+						break;
+					}
+					filename = *it;
+					std::ifstream fs(filename);
+					if (!fs.good()) // check stream state
+					{
+						std::cerr << "file stream error" << std::endl;
+						status_code = http_status_code::_404_NOT_FOUND_;
+						break;
+					}
+
+					// determine file size (i.e. content length)
+					fs.seekg(0, fs.end);
+					int length = fs.tellg();
+					fs.close();
+					content_length = length;
+
+					if (it++ != tokens.end() && *it == protocol)
+					{
+						methodsuccess = true;
+						contentsuccess = true; // content fields not required in GET
+						status_code = http_status_code::_200_OK_;
+					}
+				}
+			}
+			else if (*it == "Host:")
+			{
+				if (it++ != tokens.end())
+					host = *it;
+			}
+			else if (*it == "Iam:")
+			{
+				if (it++ != tokens.end())
+					username = *it;
+			}
+		}
+	}
+	if (methodsuccess && contentsuccess)
+		return true;
+	return false;
 }
 
 bool http_message::parse_resp_header(std::string header)
@@ -100,6 +182,13 @@ std::string http_message::create_header() const
 	ss << "Iam: " << username << "\r\n\r\n";
 	std::string str = ss.str();
 	return str;
+}
+
+std::string http_message::create_resp_header() const
+{
+	std::stringstream ss;
+	ss << protocol << " " << status_code_strings[status_code] << "\r\n\r\n";
+	return ss.str();
 }
 
 void http_message::dump_values() const

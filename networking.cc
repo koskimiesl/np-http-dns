@@ -8,6 +8,40 @@
 
 #include "networking.hh"
 
+#define LISTENQLEN 5
+
+int create_and_listen(unsigned short port)
+{
+	int listenfd;
+
+	// create socket
+	if ((listenfd = socket(AF_INET6, SOCK_STREAM, 0)) < 0)
+	{
+		perror("socket");
+		return -1;
+	}
+
+	// bind server address to socket
+	struct sockaddr_in6	servaddr;
+	memset(&servaddr, 0, sizeof(servaddr));
+	servaddr.sin6_family = AF_INET6;
+	servaddr.sin6_addr = in6addr_any; // any interface
+	servaddr.sin6_port = htons(port);
+	if (bind(listenfd, (struct sockaddr*)&servaddr, sizeof(servaddr)) < 0)
+	{
+		perror("bind");
+		return -1;
+	}
+
+	// set socket to passive mode
+	if (listen(listenfd, LISTENQLEN) < 0)
+	{
+		perror("listen");
+		return -1;
+	}
+
+	return listenfd;
+}
 
 void print_address(const char *prefix, const struct addrinfo *res)
 {

@@ -51,7 +51,7 @@ int daemon_init(const char* progname, int facility)
 	for (i = 0; i < MAXFD; i++)
 		close(i);
 
-	// redirect standard streams
+	// redirect standard streams to black hole
 	open("/dev/null", O_RDONLY); // stdin
 	open("/dev/null", O_RDWR); // stdout
 	open("/dev/null", O_RDWR); // stderr
