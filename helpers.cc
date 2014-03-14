@@ -8,12 +8,13 @@
 
 #define MAXPORT 65535
 
-int get_server_opts(int argc, char** argv, unsigned short& port, bool& debug)
+int get_server_opts(int argc, char** argv, unsigned short& port, bool& debug, std::string& username)
 {
 	bool portgiven = false;
+	bool usernamegiven = false;
 	unsigned long candidate;
 	char opt;
-	while ((opt = getopt(argc, argv, "p:d")) != -1)
+	while ((opt = getopt(argc, argv, "p:du:")) != -1)
 	{
 		switch (opt)
 		{
@@ -29,12 +30,15 @@ int get_server_opts(int argc, char** argv, unsigned short& port, bool& debug)
 				std::cerr << "error: max port is " << MAXPORT << std::endl;
 				break;
 			}
-			port = (unsigned short) candidate;
-			std::cout << "using port " << port << std::endl;
+			port = (unsigned short)candidate;
 			portgiven = true;
 			break;
 		case 'd':
 			debug = true;
+			break;
+		case 'u':
+			username = std::string(optarg);
+			usernamegiven = true;
 			break;
 		case '?':
 			break;
@@ -42,9 +46,9 @@ int get_server_opts(int argc, char** argv, unsigned short& port, bool& debug)
 			break;
 		}
 	}
-	if (!portgiven)
+	if (!portgiven || !usernamegiven)
 	{
-		std::cerr << "usage: ./httpserver -p port [-d]" << std::endl;
+		std::cerr << "usage: ./httpserver -p port [-d] -u username" << std::endl;
 		return -1;
 	}
 	return 0;

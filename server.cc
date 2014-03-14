@@ -19,7 +19,8 @@ int main(int argc, char *argv[])
 {
 	unsigned short port;
 	bool debug = false; // becomes a daemon by default
-	if (get_server_opts(argc, argv, port, debug) < 0)
+	std::string username;
+	if (get_server_opts(argc, argv, port, debug, username) < 0)
 		return -1;
 
 	if (!debug)
@@ -110,28 +111,29 @@ int main(int argc, char *argv[])
 				return -1;
 			}
 			http_message msg(header);
-			if (!msg.parse_req_header())
-			{
-				std::cerr << "failed to parse header" << std::endl;
-				return -1;
-			}
-
+			msg.parse_req_header();
+			std::string resp_header = msg.create_resp_header(username);
 			if (msg.method == http_method::GET)
 			{
-				char* payload = new char[msg.content_length]; // allocate memory for payload
-				std::ifstream fs(msg.filename);
-				fs.read(payload, msg.content_length);
-				if ((size_t)fs.gcount() != msg.content_length)
+				if (msg.status_code == http_status_code::_200_OK_) // send header + payload
 				{
-					std::cerr << "failed to read file into memory" << std::endl;
-					return -1;
-				}
-				std::cout << "successfully read " << fs.gcount() << " characters into memory" << std::endl;
-				fs.close();
+					char* payload = new char[msg.content_length]; // allocate memory for payload
+					std::ifstream fs(msg.filename);
+					fs.read(payload, msg.content_length);
+					if ((size_t)fs.gcount() != msg.content_length)
+					{
+						std::cerr << "failed to read file into memory" << std::endl;
+						return -1;
+					}
+					std::cout << "successfully read " << fs.gcount() << " characters into memory" << std::endl;
+					fs.close();
 
-				if (send_message(connfd, msg.create_resp_header(), payload, msg.content_length) < 0)
+					if (send_message(connfd, resp_header, payload, msg.content_length) < 0)
+						return -1;
+					delete[] payload; // free memory
+				}
+				else if (send_message(connfd, resp_header) < 0) // send only header
 					return -1;
-				delete[] payload; // free memory
 			}
 
 			// close client socket and start waiting for new client
