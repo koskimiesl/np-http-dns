@@ -81,11 +81,12 @@ int send_message(int sockfd, std::string header, const char* payload, size_t pll
 	std::cout << std::endl << "Sending header:" << std::endl << header << std::endl;
 	const char* msg = header.c_str();
 	int hsent, psent;
-	if ((hsent = write(sockfd, msg, strlen(msg))) < 0)
+	if ((hsent = write(sockfd, msg, strlen(msg))) < 0) // don't write null character because message continues
 		std::cerr << "Error in writing to socket" << std::endl;
-	if ((psent = write(sockfd, payload, pllength+1)) < 0)
+	if ((psent = write(sockfd, payload, pllength)) < 0)
 		std::cerr << "Error in writing to socket" << std::endl;
 
+	std::cout << hsent << " bytes of header sent" << std::endl;
 	std::cout << psent << " bytes of payload sent" << std::endl;
 	return hsent + psent;
 }

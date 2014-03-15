@@ -133,7 +133,7 @@ int main(int argc, char *argv[])
 			std::string payload_so_far = readtotal.substr(found + delimiter.length());
 			size_t payload_read = payload_so_far.length();
 			std::ofstream file;
-			file.open("clienttest.txt");
+			file.open(request.filename.c_str());
 			file << payload_so_far;
 
 			// read rest of payload from socket and write to a file

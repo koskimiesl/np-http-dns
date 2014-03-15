@@ -5,6 +5,8 @@
 
 #include <string>
 
+int create_dir(const std::string path);
+
 int get_server_opts(int argc, char** argv, unsigned short& port, bool& debug, std::string& username);
 
 #endif

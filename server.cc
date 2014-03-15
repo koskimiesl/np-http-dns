@@ -4,6 +4,7 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <istream>
 #include <syslog.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -128,11 +129,44 @@ int main(int argc, char *argv[])
 					std::cout << "successfully read " << fs.gcount() << " characters into memory" << std::endl;
 					fs.close();
 
+					std::cout << "Content length: " << msg.content_length << std::endl;
 					if (send_message(connfd, resp_header, payload, msg.content_length) < 0)
 						return -1;
 					delete[] payload; // free memory
 				}
 				else if (send_message(connfd, resp_header) < 0) // send only header
+					return -1;
+			}
+			else if (msg.method == http_method::PUT)
+			{
+				if (msg.status_code == http_status_code::_200_OK_ || msg.status_code == http_status_code::_201_CREATED_) // read payload
+				{
+					std::string payload_so_far = readtotal.substr(found + delimiter.length());
+					size_t payload_read = payload_so_far.length();
+					std::ofstream file;
+					file.open(msg.filename.c_str());
+					file << payload_so_far;
+
+					// read rest of payload from socket and write to a file
+					while (payload_read < msg.content_length && (recvd = read(connfd, buffer, RECVBUFSIZE)) > 0)
+					{
+						std::string chunk(buffer, recvd);
+						payload_read += recvd;
+						file << chunk;
+					}
+					file.close();
+					if (recvd == 0)
+					{
+						std::cerr << "client closed connection" << std::endl;
+						return -1;
+					}
+					if (recvd < 0)
+					{
+						perror("read");
+						return -1;
+					}
+				}
+				if (send_message(connfd, resp_header) < 0) // send response
 					return -1;
 			}
 

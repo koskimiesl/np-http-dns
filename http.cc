@@ -70,13 +70,24 @@ void http_message::parse_req_header()
 		method = http_method::GET;
 		if (it++ != tokens.end())
 		{
-			if (access((*it).c_str(), R_OK) < 0) // check file existence and read permission
+			if ((*it).length() > 0)
+			{
+				if ((*it).at(0) == '/') // ignore slash in the beginning of path
+					filename = (*it).substr(1);
+				else
+					filename = *it;
+			}
+			else
+			{
+				status_code = http_status_code::_404_NOT_FOUND_;
+				return;
+			}
+			if (access(filename.c_str(), R_OK) < 0) // check file existence and read permission
 			{
 				perror("access");
 				status_code = http_status_code::_404_NOT_FOUND_;
 				return;
 			}
-			filename = *it;
 			std::ifstream fs(filename);
 			if (!fs.good()) // check stream state
 			{
@@ -123,7 +134,7 @@ void http_message::parse_req_header()
 		}
 		bool typegiven = false;
 		bool lengthgiven = false;
-		while (getline(headeriss, line)) // parse other required values
+		while (getline(headeriss, line)) // parse other required fields
 		{
 			istringstream lineiss(line);
 			// tokens separated by a white space into a vector
@@ -243,14 +254,16 @@ std::string http_message::create_resp_header(std::string username) const
 {
 	std::stringstream ss;
 	ss << protocol << " " << status_code_strings[status_code] << "\r\n";
+	ss << "Content-Type: text/plain" << "\r\n";
 	if (method == http_method::GET)
 	{
 		if (status_code == http_status_code::_200_OK_)
-		{
-			ss << "Content-Type: text/plain" << "\r\n";
 			ss << "Content-Length: " << content_length << "\r\n";
-		}
+		else
+			ss << "Content-Length: 0" << "\r\n";
 	}
+	else if (method == http_method::PUT)
+		ss << "Content-Length: 0" << "\r\n";
 	ss << "Iam: " << username << "\r\n\r\n";
 	return ss.str();
 }
