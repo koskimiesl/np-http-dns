@@ -9,19 +9,6 @@
 
 #define MAXPORT 65535
 
-int create_dir(const std::string path)
-{
-	struct stat st;
-	if (stat(path.c_str(), &st) == 0) // directory exists
-		return 0;
-	if (mkdir(path.c_str(), 0777) == -1)
-	{
-		perror("mkdir");
-		return -1;
-	}
-	return 0;
-}
-
 int get_server_opts(int argc, char** argv, unsigned short& port, bool& debug, std::string& username)
 {
 	bool portgiven = false;
