@@ -1,5 +1,5 @@
 CPP = g++
-FLAGS = -std=c++0x -Wall -Wextra -pedantic
+FLAGS = -std=c++0x -Wall -Wextra -pedantic -lpthread
 
 objects_server = server.o daemon.o helpers.o http.o networking.o
 objects_client = client.o networking.o http.o

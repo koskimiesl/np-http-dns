@@ -1,182 +1,132 @@
-#include <algorithm>
 #include <arpa/inet.h>
-#include <cstdio>
+#include <cerrno>
 #include <cstring>
-#include <fstream>
 #include <iostream>
-#include <istream>
-#include <syslog.h>
-#include <sys/socket.h>
+#include <pthread.h>
+#include <queue>
 #include <unistd.h>
 
-#include "daemon.hh"
-#include "helpers.hh"
-#include "http.hh"
 #include "networking.hh"
 
-#define RECVBUFSIZE 1024
+/* for inter-thread communication, access protected by mutex */
+struct thread_id_queue
+{
+    std::queue<pthread_t> queue;
+    pthread_mutex_t mutex;
+};
+
+thread_id_queue* join_queue; // thread IDs of completed threads
+
+void* serve_client(void*);
 
 int main(int argc, char *argv[])
 {
-	unsigned short port;
-	bool debug = false; // becomes a daemon by default
-	std::string username;
-	if (get_server_opts(argc, argv, port, debug, username) < 0)
-		return -1;
-
-	if (!debug)
-	{
-		std::cout << "starting daemon..." << std::endl;
-		if (daemon_init("httpserver", LOG_WARNING) < 0)
-			return -1;
-		syslog(LOG_NOTICE, "started");
-		closelog();
-	}
+	thread_id_queue queue;
+	queue.mutex = PTHREAD_MUTEX_INITIALIZER;
+	join_queue = &queue;
 
 	int listenfd;
-	if ((listenfd = create_and_listen(port)) < 0)
+	if ((listenfd = create_and_listen(6001)) < 0)
 		return -1;
 
-	fd_set readset; // set to watch to see if read won't block
-	int connfd = -1;
+	int connfd;
+	fd_set readset;
 	struct timeval timeout;
 	int numfds;
-	int maxfd = listenfd + 1;
-	socklen_t len;
-	struct sockaddr_in6	cliaddr;
-	char buff[80];
-	char buffer[RECVBUFSIZE];
-
 	while (1)
 	{
-		FD_ZERO(&readset); // clear the set
-		FD_SET(listenfd, &readset); // add listen fd to the set
-		if (connfd >= 0)
-			FD_SET(connfd, &readset); // add client connection fd to the set
-
-		// on Linux, select modifies timeout -> reinitialize it
-		timeout.tv_sec = 3;
+		/* use select with timeout to see if read won't block */
+		FD_ZERO(&readset);
+		FD_SET(listenfd, &readset);
+		timeout.tv_sec = 2;
 		timeout.tv_usec = 0;
-
-		if ((numfds = select(maxfd, &readset, NULL, NULL, &timeout)) < 0)
+		if ((numfds = select(listenfd+1, &readset, NULL, NULL, &timeout)) < 0)
 		{
 			perror("select");
 			return -1;
 		}
-
-		len = sizeof(cliaddr);
-		if (FD_ISSET(listenfd, &readset))
-		{
-			if ((connfd = accept(listenfd, (struct sockaddr*)&cliaddr, &len)) < 0)
-			{
-				perror("accept");
-				return -1;
-			}
-			std::cout << "connection from " << inet_ntop(AF_INET6, &cliaddr.sin6_addr, buff, sizeof(buff))
-					  << ", port " << ntohs(cliaddr.sin6_port) << std::endl;
-
-			if (connfd >= maxfd)
-				maxfd = connfd + 1;
-		}
-
-		if (connfd >= 0 && FD_ISSET(connfd, &readset)) // handle client's request
-		{
-			// parse request header
-			bool emptylinefound = false;
-			int recvd;
-			std::string readtotal;
-			size_t found; // index of start of delimiter
-			std::string delimiter("\r\n\r\n");
-			std::string header;
-			memset(buffer, 0, RECVBUFSIZE);
-			while (!emptylinefound && (recvd = read(connfd, buffer, RECVBUFSIZE)) > 0)
-			{
-				std::string chunk(buffer, recvd);
-				readtotal += chunk;
-				found = readtotal.find(delimiter);
-				if (found != std::string::npos)
-				{
-					emptylinefound = true;
-					header = readtotal.substr(0, found + delimiter.length()); // include empty line to header
-					std::cout << std::endl << "request header:" << std::endl << header << std::endl;
-				}
-			}
-			if (recvd < 0)
-			{
-				perror("read");
-				return -1;
-			}
-			if (!emptylinefound)
-			{
-				std::cerr << "empty line not found" << std::endl;
-				return -1;
-			}
-			http_message msg(header);
-			msg.parse_req_header();
-			std::string resp_header = msg.create_resp_header(username);
-			if (msg.method == http_method::GET)
-			{
-				if (msg.status_code == http_status_code::_200_OK_) // send header + payload
-				{
-					char* payload = new char[msg.content_length]; // allocate memory for payload
-					std::ifstream fs(msg.filename);
-					fs.read(payload, msg.content_length);
-					if ((size_t)fs.gcount() != msg.content_length)
-					{
-						std::cerr << "failed to read file into memory" << std::endl;
-						return -1;
-					}
-					std::cout << "successfully read " << fs.gcount() << " characters into memory" << std::endl;
-					fs.close();
-
-					std::cout << "Content length: " << msg.content_length << std::endl;
-					if (send_message(connfd, resp_header, payload, msg.content_length) < 0)
-						return -1;
-					delete[] payload; // free memory
-				}
-				else if (send_message(connfd, resp_header) < 0) // send only header
-					return -1;
-			}
-			else if (msg.method == http_method::PUT)
-			{
-				if (msg.status_code == http_status_code::_200_OK_ || msg.status_code == http_status_code::_201_CREATED_) // read payload
-				{
-					std::string payload_so_far = readtotal.substr(found + delimiter.length());
-					size_t payload_read = payload_so_far.length();
-					std::ofstream file;
-					file.open(msg.filename.c_str());
-					file << payload_so_far;
-
-					// read rest of payload from socket and write to a file
-					while (payload_read < msg.content_length && (recvd = read(connfd, buffer, RECVBUFSIZE)) > 0)
-					{
-						std::string chunk(buffer, recvd);
-						payload_read += recvd;
-						file << chunk;
-					}
-					file.close();
-					if (recvd == 0)
-					{
-						std::cerr << "client closed connection" << std::endl;
-						return -1;
-					}
-					if (recvd < 0)
-					{
-						perror("read");
-						return -1;
-					}
-				}
-				if (send_message(connfd, resp_header) < 0) // send response
-					return -1;
-			}
-
-			// close client socket and start waiting for new client
-			close(connfd);
-			connfd = -1;
-			std::cout << "closed connection" << std::endl;
-		}
-
 		if (numfds == 0)
-			std::cout << "timer expired" << std::endl;
+			std::cout << "select timed out" << std::endl;
+		else
+		{
+			connfd = -1;
+			struct sockaddr_in6	cliaddr;
+			socklen_t len = sizeof(cliaddr);
+
+			/* accept connection and start new thread to serve client's request */
+			if (FD_ISSET(listenfd, &readset))
+			{
+				if ((connfd = accept(listenfd, (struct sockaddr*)&cliaddr, &len)) < 0)
+				{
+					perror("accept");
+					return -1;
+				}
+
+				char buff[80];
+				std::cout << "connection from " << inet_ntop(AF_INET6, &cliaddr.sin6_addr, buff, sizeof(buff))
+						  << ", port " << ntohs(cliaddr.sin6_port) << ", fd is " << connfd << std::endl;
+
+				pthread_t tid;
+				int* connfdptr = new int; // to ensure the value hasn't changed when accessed by the new thread
+				*connfdptr = connfd;
+				if ((errno = pthread_create(&tid, NULL, serve_client, connfdptr)) != 0)
+				{
+					std::cerr << "failed to start thread: " << strerror(errno) << std::endl;
+					return -1;
+				}
+				std::cout << "started new thread with ID " << tid << std::endl;
+			}
+		}
+
+		/* call pthread_join for completed threads, clean up resources */
+		if (pthread_mutex_lock(&join_queue->mutex) != 0)
+		{
+			std::cerr << "failed to lock mutex" << std::endl;
+			return -1;
+		}
+		while (!join_queue->queue.empty())
+		{
+			void* result;
+			if (pthread_join(join_queue->queue.front(), &result) != 0)
+			{
+				std::cerr << "failed to wait for thread termination" << std::endl;
+				return -1;
+			}
+			int* fdptr = (int*)result;
+			std::cout << "thread with ID " << join_queue->queue.front() << " terminated (with fd " << *fdptr << ")" << std::endl;
+			delete fdptr;
+			join_queue->queue.pop();
+		}
+		if (pthread_mutex_unlock(&join_queue->mutex) != 0)
+		{
+			std::cerr << "failed to unlock mutex" << std::endl;
+			return -1;
+		}
 	}
+}
+
+/* thread routine */
+void* serve_client(void* fd)
+{
+	int connfd = *(int*)fd;
+	std::cout << "thread " << pthread_self() << ": serving client through fd " << connfd << std::endl;
+	char recvbuf[1024];
+	memset(recvbuf, 0, 1024);
+	int n = read(connfd, recvbuf, 1024);
+	if (n < 0)
+		perror("error reading from socket");
+	std::cout << "thread " << pthread_self() << ": received " << n << " bytes" << std::endl;
+	close(connfd); // fd number can now be reused by new connections
+
+	/* inform thread has completed (i.e. pthread_join can now be called) */
+	if (pthread_mutex_lock(&join_queue->mutex) != 0)
+	{
+		std::cerr << "failed to lock mutex" << std::endl;
+		return fd;
+	}
+	join_queue->queue.push(pthread_self());
+	if (pthread_mutex_unlock(&join_queue->mutex) != 0)
+		std::cerr << "failed to unlock mutex" << std::endl;
+
+	return fd;
 }
