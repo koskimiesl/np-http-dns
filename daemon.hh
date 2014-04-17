@@ -1,6 +1,6 @@
 
-#ifndef NP_DAEMON_HH
-#define NP_DAEMON_HH
+#ifndef NETPROG_DAEMON_HH
+#define NETPROG_DAEMON_HH
 
 /* Starts a daemon process originating from current process
  *

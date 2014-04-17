@@ -5,17 +5,18 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "helpers.hh"
+#include "general.hh"
 
 #define MAXPORT 65535
 
-int get_server_opts(int argc, char** argv, unsigned short& port, bool& debug, std::string& username)
+int get_server_opts(int argc, char** argv, unsigned short& port, bool& debug, std::string& servpath, std::string& username)
 {
 	bool portgiven = false;
+	bool servpathgiven = false;
 	bool usernamegiven = false;
 	unsigned long candidate;
 	char opt;
-	while ((opt = getopt(argc, argv, "p:du:")) != -1)
+	while ((opt = getopt(argc, argv, "p:ds:u:")) != -1)
 	{
 		switch (opt)
 		{
@@ -37,6 +38,10 @@ int get_server_opts(int argc, char** argv, unsigned short& port, bool& debug, st
 		case 'd':
 			debug = true;
 			break;
+		case 's':
+			servpath = std::string(optarg);
+			servpathgiven = true;
+			break;
 		case 'u':
 			username = std::string(optarg);
 			usernamegiven = true;
@@ -47,9 +52,9 @@ int get_server_opts(int argc, char** argv, unsigned short& port, bool& debug, st
 			break;
 		}
 	}
-	if (!portgiven || !usernamegiven)
+	if (!portgiven || !servpathgiven || !usernamegiven)
 	{
-		std::cerr << "usage: ./httpserver -p port [-d] -u username" << std::endl;
+		std::cerr << "usage: ./httpserver -p port [-d] -s servpath -u username" << std::endl;
 		return -1;
 	}
 	return 0;

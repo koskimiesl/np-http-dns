@@ -1,11 +1,11 @@
 #include <cstdio>
+#include <fcntl.h>
 #include <iostream>
 #include <signal.h>
+#include <stdlib.h>
 #include <syslog.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <fcntl.h>
-#include <stdlib.h>
 
 #include "daemon.hh"
 

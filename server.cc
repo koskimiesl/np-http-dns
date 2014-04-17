@@ -1,10 +1,13 @@
 #include <arpa/inet.h>
 #include <cerrno>
-#include <cstring>
 #include <iostream>
 #include <pthread.h>
+#include <syslog.h>
 #include <unistd.h>
 
+#include "daemon.hh"
+#include "general.hh"
+#include "http.hh"
 #include "networking.hh"
 #include "threading.hh"
 
@@ -14,10 +17,26 @@ void* process_request(void* fd);
 
 int main(int argc, char *argv[])
 {
+	unsigned short port;
+	bool debug = false; // becomes a daemon by default
+	std::string servpath; // path to serving directory
+	std::string username;
+	if (get_server_opts(argc, argv, port, debug, servpath, username) < 0)
+		return -1;
+
+	if (!debug)
+	{
+		std::cout << "starting daemon..." << std::endl;
+		if (daemon_init("httpserver", LOG_WARNING) < 0)
+			return -1;
+		syslog(LOG_NOTICE, "started");
+		closelog();
+	}
+
 	joinqueue = create_queue();
 
 	int listenfd;
-	if ((listenfd = create_and_listen(6001)) < 0)
+	if ((listenfd = create_and_listen(port)) < 0)
 		return -1;
 
 	if (start_thread(cleaner, &joinqueue, "cleaner") < 0)
@@ -51,12 +70,14 @@ void* process_request(void* fd)
 {
 	int connfd = *(int*)fd;
 	std::cout << "thread " << pthread_self() << ": serving client through fd " << connfd << std::endl;
-	char recvbuf[1024];
-	memset(recvbuf, 0, 1024);
-	int n = read(connfd, recvbuf, 1024);
-	if (n < 0)
-		perror("error reading from socket");
-	std::cout << "thread " << pthread_self() << ": received " << n << " bytes" << std::endl;
+
+	// read the request from socket
+	http_req_header request;
+	if (!from_socket(connfd, request))
+		return fd;
+
+	//http_resp_header response;
+
 	close(connfd); // fd number can now be reused by new connections
 
 	enter_queue(joinqueue);

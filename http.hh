@@ -30,8 +30,10 @@ enum http_status_code
 class http_message
 {
 public:
-	/* supported protocol */
-	static const std::string protocol;
+
+
+	/* delimiter between header and payload */
+	static const std::string delimiter;
 
 	/* constructors */
 	http_message();
@@ -71,5 +73,27 @@ private:
 	std::string username;
 	std::string server;
 };
+
+class http_req_header
+{
+public:
+
+	http_req_header();
+	http_req_header(std::string header);
+	bool parse();
+
+	std::string header;
+
+	http_method method;
+	std::string filename;
+	std::string protocol;
+};
+
+/* Construct http_req_header object by reading and parsing it from socket
+ *
+ * param msg: output parameter to save the constructed object
+ * param sockfd: socket descriptor (caller must open and close it)
+ * returns: true if operation succeeded, false otherwise */
+bool from_socket(int sockfd, http_req_header& msg);
 
 #endif

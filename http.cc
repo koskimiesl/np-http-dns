@@ -1,4 +1,5 @@
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <iterator>
@@ -8,7 +9,11 @@
 
 #include "http.hh"
 
-const std::string http_message::protocol = "HTTP/1.1";
+#define RECVBUFSIZE 1024
+
+static const std::string supportedprotocol = "HTTP/1.1";
+static const std::string delimiter = "\r\n\r\n";
+
 const char* http_message::method_strings[] = {"NOT SET", "GET", "PUT", "UNSUPPORTED"};
 const char* http_message::status_code_strings[] = {"NOT SET", // default value
 												   "200 OK",
@@ -102,7 +107,7 @@ void http_message::parse_req_header()
 			fs.close();
 			content_length = length;
 
-			if (it++ != tokens.end() && *it == protocol)
+			if (it++ != tokens.end() && *it == supportedprotocol)
 			{
 				status_code = http_status_code::_200_OK_;
 				return;
@@ -126,7 +131,7 @@ void http_message::parse_req_header()
 			else // new file will be created
 				status_code = http_status_code::_201_CREATED_;
 
-			if (!(it++ != tokens.end() && *it == protocol))
+			if (!(it++ != tokens.end() && *it == supportedprotocol))
 			{
 				status_code = http_status_code::_400_BAD_REQUEST_;
 				return;
@@ -238,7 +243,7 @@ bool http_message::parse_resp_header(std::string header)
 std::string http_message::create_header() const
 {
 	std::stringstream ss;
-	ss << method_to_str(method) << " " << filename << " " << protocol << "\r\n";
+	ss << method_to_str(method) << " " << filename << " " << supportedprotocol << "\r\n";
 	ss << "Host: " << host << "\r\n";
 	if (method == http_method::PUT)
 	{
@@ -253,7 +258,7 @@ std::string http_message::create_header() const
 std::string http_message::create_resp_header(std::string username) const
 {
 	std::stringstream ss;
-	ss << protocol << " " << status_code_strings[status_code] << "\r\n";
+	ss << supportedprotocol << " " << status_code_strings[status_code] << "\r\n";
 	ss << "Content-Type: text/plain" << "\r\n";
 	if (method == http_method::GET)
 	{
@@ -283,4 +288,145 @@ void http_message::dump_values() const
 const std::string http_message::method_to_str(http_method m) const
 {
 	return method_strings[m];
+}
+
+bool from_socket(int sockfd, http_req_header& req_header)
+{
+	bool delimiterfound = false;
+	int recvd;
+	char buffer[RECVBUFSIZE];
+	memset(buffer, 0, RECVBUFSIZE);
+	std::string readtotal;
+	size_t found; // index of start of delimiter
+	std::string header;
+	while (!delimiterfound && (recvd = read(sockfd, buffer, RECVBUFSIZE)) > 0)
+	{
+		std::string chunk(buffer, recvd);
+		readtotal += chunk;
+		found = readtotal.find(delimiter);
+		if (found != std::string::npos)
+		{
+			delimiterfound = true;
+			header = readtotal.substr(0, found + delimiter.length()); // include empty line to header
+			std::cout << std::endl << "received header:" << std::endl << header << std::endl;
+		}
+	}
+	if (recvd < 0)
+	{
+		perror("read");
+		return false;
+	}
+	if (!delimiterfound)
+	{
+		std::cerr << "delimiter not found" << std::endl;
+		return false;
+	}
+	req_header = http_req_header(header);
+	return req_header.parse();
+}
+
+http_req_header::http_req_header()
+{ }
+
+http_req_header::http_req_header(std::string header): header(header)
+{ }
+
+bool http_req_header::parse()
+{
+	using namespace std;
+	istringstream headeriss(header);
+	string line; // single line in header
+	if (!getline(headeriss, line))
+		return false;
+
+	istringstream lineiss(line);
+	vector<string> tokens{istream_iterator<string>{lineiss}, istream_iterator<string>{}};
+	if (tokens.size() == 0)
+		return false;
+
+	vector<string>::const_iterator it = tokens.begin();
+
+	if (*it == "GET") // parse GET header
+	{
+		method = http_method::GET;
+		if (it++ != tokens.end())
+		{
+			if ((*it).length() > 0)
+			{
+				if ((*it).at(0) == '/') // ignore slash in the beginning of path
+					filename = (*it).substr(1);
+				else
+					filename = *it;
+			}
+			else
+				return false;
+
+			if (it++ != tokens.end())
+			{
+				protocol = *it;
+				return true;
+			}
+		}
+	}
+	return false;
+	/*
+	else if (*it == "PUT") // parse PUT header
+	{
+		method = http_method::PUT;
+		if (it++ != tokens.end())
+		{
+			filename = *it;
+			if (access(filename.c_str(), F_OK) != -1) // file exists
+			{
+				if (access(filename.c_str(), W_OK) != -1) // program has write permission
+					status_code = http_status_code::_200_OK_;
+				else
+					status_code = http_status_code::_403_FORBIDDEN_;
+			}
+			else // new file will be created
+				status_code = http_status_code::_201_CREATED_;
+
+			if (!(it++ != tokens.end() && *it == protocol))
+			{
+				status_code = http_status_code::_400_BAD_REQUEST_;
+				return;
+			}
+		}
+		bool typegiven = false;
+		bool lengthgiven = false;
+		while (getline(headeriss, line)) // parse other required fields
+		{
+			istringstream lineiss(line);
+			// tokens separated by a white space into a vector
+			vector<string> tokens{istream_iterator<string>{lineiss}, istream_iterator<string>{}};
+			if (tokens.size() > 0)
+			{
+				vector<string>::const_iterator it = tokens.begin();
+				if (*it == "Content-Type:")
+				{
+					if (!(it++ != tokens.end() && *it == "text/plain"))
+					{
+						status_code = http_status_code::_501_NOT_IMPLEMENTED_;
+						return;
+					}
+					typegiven = true;
+				}
+				else if (*it == "Content-Length:")
+				{
+					if (it++ != tokens.end())
+					{
+						istringstream iss(*it);
+						iss >> content_length; // convert to size_t
+						lengthgiven = true;
+					}
+				}
+			}
+		}
+		if (!typegiven || !lengthgiven)
+			status_code = http_status_code::_400_BAD_REQUEST_;
+	}
+
+	else // method not implemented
+		status_code = http_status_code::_501_NOT_IMPLEMENTED_;
+	*/
 }
