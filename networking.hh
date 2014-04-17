@@ -19,6 +19,6 @@ int send_message(int sockfd, std::string header, const char* payload, size_t pll
 
 /* create and connect TCP socket
  * return socket file descriptor */
-int tcp_connect(const char *hostname, const char *service);
+int tcp_connect(std::string hostname, std::string port);
 
 #endif

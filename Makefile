@@ -2,7 +2,7 @@ CPP = g++
 FLAGS = -std=c++0x -Wall -Wextra -pedantic -lpthread
 
 objects_server = server.o daemon.o general.o http.o networking.o threading.o
-objects_client = client.o http.o networking.o
+objects_client = client.o general.o http.o networking.o
 
 objects = server.o client.o daemon.o general.o http.o networking.o threading.o
 
@@ -14,7 +14,7 @@ server: $(objects_server)
 	$(CPP) -o httpserver $(objects_server) $(FLAGS)
 
 client: $(objects_client)
-	$(CPP) -o client $(objects_client) $(FLAGS)
+	$(CPP) -o httpclient $(objects_client) $(FLAGS)
 
 server.o: server.cc
 	$(CPP) -c $^ $(FLAGS)
@@ -39,7 +39,7 @@ threading.o: threading.cc
 
 # header dependencies
 server.o: daemon.hh general.hh http.hh networking.hh threading.hh
-client.o: networking.hh http.hh
+client.o: general.hh http.hh networking.hh
 daemon.o: daemon.hh
 general.o: general.hh
 http.o: http.hh
@@ -48,4 +48,4 @@ threading.o: threading.hh
 
 .PHONY: clean
 clean:
-	rm httpserver client $(objects) *.gch
+	rm httpserver httpclient $(objects) *.gch

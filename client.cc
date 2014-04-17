@@ -11,6 +11,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include "general.hh"
 #include "http.hh"
 #include "networking.hh"
 
@@ -20,24 +21,25 @@ int main(int argc, char *argv[])
 {
 	int sockfd, sent, recvd;
 
-	if (argc != 6)
-	{
-		std::cerr << "Usage: ./client <method> <filename> <hostname> <service> <username>" << std::endl;
+	std::string hostname;
+	std::string port;
+	std::string method;
+	std::string filename;
+	std::string username;
+	if (get_client_opts(argc, argv, hostname, port, method, filename, username) < 0)
 		return -1;
-	}
 
 	// allow method in lower or upper case
-	std::string method(argv[1]);
 	std::transform(method.begin(), method.end(), method.begin(), ::toupper);
 
 	http_message request;
 
 	if (method == "GET")
 	{
-		request = http_message(http_method::GET, argv[2], argv[3], argv[5]);
+		request = http_message(http_method::GET, filename, hostname, username);
 		std::string message = request.create_header();
 
-		sockfd = tcp_connect(argv[3], argv[4]);
+		sockfd = tcp_connect(hostname, port);
 		if (sockfd < 0)
 			return -1;
 
@@ -49,7 +51,7 @@ int main(int argc, char *argv[])
 		std::ifstream file(argv[2]);
 		if (!file.good())
 		{
-			std::cerr << "File error: " << argv[2] << std::endl;
+			std::cerr << "File error: " << filename << std::endl;
 			return -1;
 		}
 

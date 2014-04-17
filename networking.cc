@@ -91,7 +91,7 @@ int send_message(int sockfd, std::string header, const char* payload, size_t pll
 	return hsent + psent;
 }
 
-int tcp_connect(const char *hostname, const char *service)
+int tcp_connect(std::string hostname, std::string port)
 {
 	/* slightly modified from lecture example */
 
@@ -102,10 +102,10 @@ int tcp_connect(const char *hostname, const char *service)
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_STREAM;
 
-	if ((addrret = getaddrinfo(hostname, service, &hints, &res)) != 0)
+	if ((addrret = getaddrinfo(hostname.c_str(), port.c_str(), &hints, &res)) != 0)
 	{
 		std::cerr << "Failed to get address info for " << hostname << ", "
-				<< service << ": " << gai_strerror(addrret) << std::endl;
+				<< port << ": " << gai_strerror(addrret) << std::endl;
 		return -1;
 	}
 	ressave = res;
@@ -129,7 +129,7 @@ int tcp_connect(const char *hostname, const char *service)
 
 	if (res == NULL)
 	{
-		std::cerr << "Failed to connect " << hostname << ", " << service << std::endl,
+		std::cerr << "Failed to connect " << hostname << ", " << port << std::endl,
 		sockfd = -1;
 	}
 	else

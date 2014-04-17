@@ -72,11 +72,12 @@ void* process_request(void* fd)
 	std::cout << "thread " << pthread_self() << ": serving client through fd " << connfd << std::endl;
 
 	// read the request from socket
-	http_req_header request;
-	if (!from_socket(connfd, request))
-		return fd;
+	http_request request = http_request::from_socket(connfd);
+	request.print();
 
-	//http_resp_header response;
+	//http_response* response = create_response(request);
+
+
 
 	close(connfd); // fd number can now be reused by new connections
 

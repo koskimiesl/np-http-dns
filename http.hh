@@ -65,7 +65,6 @@ public:
 private:
 
 	const std::string method_to_str(http_method m) const;
-	static const char* method_strings[];
 	static const char* status_code_strings[];
 
 	std::string host;
@@ -74,26 +73,32 @@ private:
 	std::string server;
 };
 
-class http_req_header
+class http_request
 {
 public:
 
-	http_req_header();
-	http_req_header(std::string header);
-	bool parse();
+	/* Constructor */
+	http_request();
+
+	/* Return request object by reading and parsing it from socket
+	 *
+	 * param sockfd: socket descriptor (caller must open and close it)
+	 * returns: request object */
+	static http_request from_socket(int sockfd);
+
+	void print() const;
 
 	std::string header;
 
 	http_method method;
 	std::string filename;
 	std::string protocol;
-};
+	std::string content_type;
+	size_t content_length;
 
-/* Construct http_req_header object by reading and parsing it from socket
- *
- * param msg: output parameter to save the constructed object
- * param sockfd: socket descriptor (caller must open and close it)
- * returns: true if operation succeeded, false otherwise */
-bool from_socket(int sockfd, http_req_header& msg);
+private:
+
+	void parse_header();
+};
 
 #endif

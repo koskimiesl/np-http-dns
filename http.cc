@@ -13,8 +13,8 @@
 
 static const std::string supportedprotocol = "HTTP/1.1";
 static const std::string delimiter = "\r\n\r\n";
+static const char* method_strings[] = {"NOT SET", "GET", "PUT", "UNSUPPORTED"};
 
-const char* http_message::method_strings[] = {"NOT SET", "GET", "PUT", "UNSUPPORTED"};
 const char* http_message::status_code_strings[] = {"NOT SET", // default value
 												   "200 OK",
 												   "201 Created",
@@ -290,8 +290,11 @@ const std::string http_message::method_to_str(http_method m) const
 	return method_strings[m];
 }
 
-bool from_socket(int sockfd, http_req_header& req_header)
+http_request http_request::from_socket(int sockfd)
 {
+	http_request request;
+
+	/* strip header from the message */
 	bool delimiterfound = false;
 	int recvd;
 	char buffer[RECVBUFSIZE];
@@ -307,126 +310,99 @@ bool from_socket(int sockfd, http_req_header& req_header)
 		if (found != std::string::npos)
 		{
 			delimiterfound = true;
-			header = readtotal.substr(0, found + delimiter.length()); // include empty line to header
-			std::cout << std::endl << "received header:" << std::endl << header << std::endl;
+			header = readtotal.substr(0, found + delimiter.length()); // include delimiter to header
 		}
 	}
 	if (recvd < 0)
 	{
 		perror("read");
-		return false;
+		return request;
 	}
 	if (!delimiterfound)
 	{
 		std::cerr << "delimiter not found" << std::endl;
-		return false;
+		return request;
 	}
-	req_header = http_req_header(header);
-	return req_header.parse();
+	request.header = header;
+
+	/* parse header fields from the header */
+	request.parse_header();
+
+	return request;
 }
 
-http_req_header::http_req_header()
+http_request::http_request() : method(http_method::NOT_SET), content_length(0)
 { }
 
-http_req_header::http_req_header(std::string header): header(header)
-{ }
-
-bool http_req_header::parse()
+void http_request::parse_header()
 {
 	using namespace std;
 	istringstream headeriss(header);
 	string line; // single line in header
-	if (!getline(headeriss, line))
-		return false;
 
+	/* parse first line */
+	if (!getline(headeriss, line))
+		return;
 	istringstream lineiss(line);
 	vector<string> tokens{istream_iterator<string>{lineiss}, istream_iterator<string>{}};
 	if (tokens.size() == 0)
-		return false;
-
+		return;
 	vector<string>::const_iterator it = tokens.begin();
-
-	if (*it == "GET") // parse GET header
-	{
+	if (*it == "GET")
 		method = http_method::GET;
-		if (it++ != tokens.end())
-		{
-			if ((*it).length() > 0)
-			{
-				if ((*it).at(0) == '/') // ignore slash in the beginning of path
-					filename = (*it).substr(1);
-				else
-					filename = *it;
-			}
-			else
-				return false;
-
-			if (it++ != tokens.end())
-			{
-				protocol = *it;
-				return true;
-			}
-		}
-	}
-	return false;
-	/*
-	else if (*it == "PUT") // parse PUT header
-	{
+	else if (*it == "PUT")
 		method = http_method::PUT;
-		if (it++ != tokens.end())
+	if (it++ != tokens.end())
+	{
+		if ((*it).length() > 0)
 		{
-			filename = *it;
-			if (access(filename.c_str(), F_OK) != -1) // file exists
-			{
-				if (access(filename.c_str(), W_OK) != -1) // program has write permission
-					status_code = http_status_code::_200_OK_;
-				else
-					status_code = http_status_code::_403_FORBIDDEN_;
-			}
-			else // new file will be created
-				status_code = http_status_code::_201_CREATED_;
+			if ((*it).at(0) == '/') // ignore slash in the beginning of path
+				filename = (*it).substr(1);
+			else
+				filename = *it;
+		}
+		else
+			return;
 
-			if (!(it++ != tokens.end() && *it == protocol))
-			{
-				status_code = http_status_code::_400_BAD_REQUEST_;
-				return;
-			}
-		}
-		bool typegiven = false;
-		bool lengthgiven = false;
-		while (getline(headeriss, line)) // parse other required fields
-		{
-			istringstream lineiss(line);
-			// tokens separated by a white space into a vector
-			vector<string> tokens{istream_iterator<string>{lineiss}, istream_iterator<string>{}};
-			if (tokens.size() > 0)
-			{
-				vector<string>::const_iterator it = tokens.begin();
-				if (*it == "Content-Type:")
-				{
-					if (!(it++ != tokens.end() && *it == "text/plain"))
-					{
-						status_code = http_status_code::_501_NOT_IMPLEMENTED_;
-						return;
-					}
-					typegiven = true;
-				}
-				else if (*it == "Content-Length:")
-				{
-					if (it++ != tokens.end())
-					{
-						istringstream iss(*it);
-						iss >> content_length; // convert to size_t
-						lengthgiven = true;
-					}
-				}
-			}
-		}
-		if (!typegiven || !lengthgiven)
-			status_code = http_status_code::_400_BAD_REQUEST_;
+		if (it++ != tokens.end())
+			protocol = *it;
 	}
 
-	else // method not implemented
-		status_code = http_status_code::_501_NOT_IMPLEMENTED_;
-	*/
+	/* parse rest of lines */
+	while (getline(headeriss, line))
+	{
+		istringstream lineiss(line);
+		vector<string> tokens{istream_iterator<string>{lineiss}, istream_iterator<string>{}};
+		if (tokens.size() > 0)
+		{
+			vector<string>::const_iterator it = tokens.begin();
+			if (*it == "Content-Type:")
+			{
+				if (it++ != tokens.end())
+					content_type = *it;
+			}
+			else if (*it == "Content-Length:")
+			{
+				if (it++ != tokens.end())
+				{
+					istringstream iss(*it);
+					iss >> content_length; // convert to size_t
+				}
+			}
+		}
+	}
+}
+
+void http_request::print() const
+{
+	std::cout << std::endl << "*** Request header ***" << std::endl
+			  << header << std::endl
+			  << "**********************" << std::endl << std::endl
+			  << "*** Parsed values ***" << std::endl
+			  << "Method: " << method_strings[method] << std::endl
+			  << "Filename: " << filename << std::endl
+			  << "Protocol: " << protocol << std::endl
+			  << "Content-Type: " << content_type << std::endl
+			  << "Content-Length: " << content_length << std::endl
+			  << "*********************" << std::endl << std::endl;
 }
