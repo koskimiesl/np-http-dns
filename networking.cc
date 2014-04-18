@@ -10,6 +10,34 @@
 
 #define LISTENQLEN 5
 
+int accept_connection(int listenfd)
+{
+	int connfd;
+	struct sockaddr_in6	addr;
+	socklen_t len = sizeof(addr);
+	if ((connfd = accept(listenfd, (struct sockaddr*)&addr, &len)) < 0)
+	{
+		perror("accept");
+		return -1;
+	}
+
+	/* set 5 second receive timeout */
+	struct timeval tv;
+	tv.tv_sec = 5;
+	tv.tv_usec = 0;
+	if (setsockopt(connfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,sizeof(struct timeval)) < 0)
+	{
+		perror("setsockopt");
+		return -1;
+	}
+
+	char buff[80];
+	std::cout << "connection from " << inet_ntop(AF_INET6, &addr.sin6_addr, buff, sizeof(buff))
+			  << ", port " << ntohs(addr.sin6_port) << ", fd is " << connfd << std::endl;
+
+	return connfd;
+}
+
 int create_and_listen(unsigned short port)
 {
 	int listenfd;
@@ -68,12 +96,29 @@ void print_address(const char *prefix, const struct addrinfo *res)
 
 int send_message(int sockfd, std::string message)
 {
-	std::cout << std::endl << "Sending message:" << std::endl << message << std::endl;
 	const char* msg = message.c_str();
-	int n;
-	if ((n = write(sockfd, msg, strlen(msg)+1)) < 0)
-		std::cerr << "Error in writing to socket" << std::endl;
-	return n;
+	std::cout << std::endl << "sending message:" << std::endl << msg << std::endl;
+	size_t remaining = strlen(msg) + 1;; // number of bytes remaining to send
+	ssize_t sent;
+	size_t byteidx = 0;
+	size_t chunktosend = 10;
+	while (remaining > 0)
+	{
+		if (remaining < chunktosend)
+			chunktosend = remaining;
+		if ((sent = write(sockfd, &msg[byteidx], chunktosend)) < 0)
+		{
+			perror("write");
+			return -1;
+		}
+		byteidx += sent;
+		remaining -= sent;
+		std::cout << sent << " bytes sent, " << remaining << " bytes remaining" << std::endl;
+	}
+	if (remaining == 0)
+		return 0;
+	std::cerr << "bytes remaining is not zero!" << std::endl;
+	return -1;
 }
 
 int send_message(int sockfd, std::string header, const char* payload, size_t pllength)

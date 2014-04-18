@@ -81,8 +81,9 @@ public:
 	http_request();
 
 	/* Return request object by reading and parsing it from socket
+	 * Caller must open and close the socket descriptor
 	 *
-	 * param sockfd: socket descriptor (caller must open and close it)
+	 * param sockfd: socket descriptor with receive timeout set
 	 * returns: request object */
 	static http_request from_socket(int sockfd);
 
@@ -97,7 +98,7 @@ public:
 
 	void print() const;
 
-	std::string header;
+	std::string header; // whole header
 
 	http_method method;
 	std::string filename;
@@ -111,6 +112,32 @@ private:
 
 	void create_header();
 	void parse_header();
+};
+
+class http_response
+{
+public:
+
+	/* Constructor */
+	http_response();
+
+	static http_response from_request(http_request request, std::string username);
+
+	void print() const;
+
+	std::string header; // whole header
+
+	std::string protocol;
+	http_status_code status_code;
+	std::string username;
+	std::string content_type;
+	size_t content_length;
+
+	http_method request_method;
+
+private:
+
+	void create_header();
 };
 
 #endif

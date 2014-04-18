@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cerrno>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -9,8 +10,8 @@
 #include <unistd.h>
 #include <vector>
 
+#include "general.hh"
 #include "http.hh"
-#include "networking.hh"
 
 #define RECVBUFSIZE 1024
 
@@ -19,10 +20,24 @@ static const std::string scontenttype = "text/plain"; // supported content type
 static const std::string delimiter = "\r\n\r\n";
 static const char* method_strings[] = {"NOT SET", "GET", "PUT", "UNSUPPORTED"};
 
-static std::map<std::string, http_method> stringtomethod = { {"NOT SET", http_method::NOT_SET},
-															 {"GET", http_method::GET},
-															 {"PUT", http_method::PUT},
-															 {"UNSUPPORTED", http_method::UNSUPPORTED} };
+static std::map<std::string, http_method> strtomethod = { {"NOT SET", http_method::NOT_SET},
+														  {"GET", http_method::GET},
+														  {"PUT", http_method::PUT},
+														  {"UNSUPPORTED", http_method::UNSUPPORTED} };
+
+static std::map<http_method, std::string> methodtostr = { {http_method::NOT_SET, "NOT SET"},
+														  {http_method::GET, "GET"},
+														  {http_method::PUT, "PUT"},
+														  {http_method::UNSUPPORTED, "UNSUPPORTED"} };
+
+static std::map<http_status_code, std::string> statustostr = { {http_status_code::_NOT_SET_, "NOT SET"},
+															   {http_status_code::_200_OK_, "200 OK"},
+															   {http_status_code::_201_CREATED_, "201 Created"},
+															   {http_status_code::_400_BAD_REQUEST_, "400 Bad Request"},
+															   {http_status_code::_403_FORBIDDEN_, "403 Forbidden"},
+															   {http_status_code::_404_NOT_FOUND_, "404 Not Found"},
+														 	   {http_status_code::_501_NOT_IMPLEMENTED_, "501 Not Implemented"},
+															   {http_status_code::_UNSUPPORTED_, "UNSUPPORTED"} };
 
 const char* http_message::status_code_strings[] = {"NOT SET", // default value
 												   "200 OK",
@@ -327,7 +342,10 @@ http_request http_request::from_socket(int sockfd)
 	}
 	if (recvd < 0)
 	{
-		perror("read");
+		if (errno == EAGAIN || errno == EWOULDBLOCK)
+			std::cerr << "read: " << strerror(errno) << " (read from socket timed out)" << std::endl;
+		else
+			perror("read");
 		return request;
 	}
 	if (!delimiterfound)
@@ -347,8 +365,8 @@ http_request http_request::from_params(std::string method, std::string filename,
 {
 	http_request request;
 
-	std::transform(method.begin(), method.end(), method.begin(), ::toupper); // method to upper case
-	switch (stringtomethod[method])
+	std::transform(method.begin(), method.end(), method.begin(), ::toupper); // method string to upper case
+	switch (strtomethod[method])
 	{
 	case http_method::GET:
 		request.method = http_method::GET;
@@ -389,6 +407,8 @@ void http_request::parse_header()
 		method = http_method::GET;
 	else if (*it == "PUT")
 		method = http_method::PUT;
+	else
+		method = http_method::UNSUPPORTED;
 	if (it++ != tokens.end())
 	{
 		if ((*it).length() > 0)
@@ -413,7 +433,17 @@ void http_request::parse_header()
 		if (tokens.size() > 0)
 		{
 			vector<string>::const_iterator it = tokens.begin();
-			if (*it == "Content-Type:")
+			if (*it == "Host:")
+			{
+				if (it++ != tokens.end())
+					hostname = *it;
+			}
+			else if (*it == "Iam:")
+			{
+				if (it++ != tokens.end())
+					username = *it;
+			}
+			else if (*it == "Content-Type:")
 			{
 				if (it++ != tokens.end())
 					content_type = *it;
@@ -435,7 +465,7 @@ void http_request::print() const
 	std::cout << std::endl << "*** Request header ***" << std::endl
 			  << header << std::endl
 			  << "**********************" << std::endl << std::endl
-			  << "*** Parsed values ***" << std::endl
+			  << "*** Request header values ***" << std::endl
 			  << "Method: " << method_strings[method] << std::endl
 			  << "Filename: " << filename << std::endl
 			  << "Protocol: " << protocol << std::endl
@@ -443,13 +473,13 @@ void http_request::print() const
 			  << "Username: " << username << std::endl
 			  << "Content-Type: " << content_type << std::endl
 			  << "Content-Length: " << content_length << std::endl
-			  << "*********************" << std::endl << std::endl;
+			  << "*****************************" << std::endl << std::endl;
 }
 
 void http_request::create_header()
 {
 	std::stringstream headerss;
-	headerss << method_strings[method] << " " << filename << " " << sprotocol << "\r\n";
+	headerss << methodtostr[method] << " " << filename << " " << sprotocol << "\r\n";
 	headerss << "Host: " << hostname << "\r\n";
 	headerss << "Iam: " << username << "\r\n";
 	if (method == http_method::PUT)
@@ -457,6 +487,67 @@ void http_request::create_header()
 		headerss << "Content-Type: " << scontenttype << "\r\n";
 		headerss << "Content-Length: " << content_length << "\r\n";
 	}
+	headerss << "\r\n";
+	header = headerss.str();
+}
 
+http_response::http_response() : status_code(http_status_code::_NOT_SET_), content_length(0)
+{ }
+
+http_response http_response::from_request(http_request request, std::string username)
+{
+	http_response response;
+	response.request_method = request.method;
+	response.protocol = sprotocol;
+
+	switch (request.method)
+	{
+	case http_method::GET:
+		int filesize;
+		if ((filesize = get_file_size(request.filename)) < 0)
+			response.status_code = http_status_code::_404_NOT_FOUND_;
+		else
+		{
+			response.status_code = http_status_code::_200_OK_;
+			response.content_type = scontenttype;
+			response.content_length = filesize;
+		}
+		break;
+	default:
+		response.status_code = http_status_code::_501_NOT_IMPLEMENTED_;
+		break;
+	}
+
+	response.username = username;
+	response.create_header();
+
+	return response;
+}
+
+void http_response::print() const
+{
+	std::cout << std::endl << "*** Response header ***" << std::endl
+			  << header << std::endl
+			  << "***********************" << std::endl << std::endl
+			  << "*** Response header values ***" << std::endl
+			  << "Protocol: " << protocol << std::endl
+			  << "Status code: " << statustostr[status_code] << std::endl
+			  << "Username: " << username << std::endl
+			  << "Content-Type: " << content_type << std::endl
+			  << "Content-Length: " << content_length << std::endl
+			  << "******************************" << std::endl << std::endl;
+}
+
+void http_response::create_header()
+{
+	std::stringstream headerss;
+	headerss << protocol << " " << statustostr[status_code] << "\r\n";
+	headerss << "Iam: " << username << "\r\n";
+	if (request_method == http_method::GET && status_code == http_status_code::_200_OK_)
+	{
+		headerss << "Content-Type: " << content_type << "\r\n";
+		headerss << "Content-Length: " << content_length << "\r\n";
+	}
+	headerss << "\r\n";
 	header = headerss.str();
 }

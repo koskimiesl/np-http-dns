@@ -42,7 +42,7 @@ server.o: daemon.hh general.hh http.hh networking.hh threading.hh
 client.o: general.hh http.hh networking.hh
 daemon.o: daemon.hh
 general.o: general.hh
-http.o: http.hh networking.hh
+http.o: general.hh http.hh
 networking.o: networking.hh
 threading.o: threading.hh
 

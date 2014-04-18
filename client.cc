@@ -81,8 +81,6 @@ int main(int argc, char *argv[])
 	}
 	*/
 
-	std::cout << sent << " bytes sent" << std::endl;
-
 
 	// handle response
 	char buffer[RECVBUFSIZE];

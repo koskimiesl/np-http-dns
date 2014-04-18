@@ -22,9 +22,10 @@ void* cleaner(void* queue)
 				perror("pthread_join");
 				return queue;
 			}
-			int* fdptr = (int*)result;
-			std::cout << "cleaner: thread with ID " << tqueue->queue.front() << " terminated (fd: " << *fdptr << ")" << std::endl;
-			delete fdptr;
+			process_req_params* parameters = (process_req_params*)result;
+			std::cout << "cleaner: thread with ID " << tqueue->queue.front() << " terminated (parameters: connfd: "
+					  << parameters->connfd << ", username: " << parameters->username << ")" << std::endl;
+			delete parameters;
 			tqueue->queue.pop();
 		}
 		while (tqueue->queue.empty()) // if queue is empty, wait for condition (i.e. when queue has items)
@@ -43,9 +44,10 @@ void* cleaner(void* queue)
 					perror("pthread_join");
 					return queue;
 				}
-				int* fdptr = (int*)result;
-				std::cout << "cleaner: thread with ID " << tqueue->queue.front() << " terminated (fd: " << *fdptr << ")" << std::endl;
-				delete fdptr;
+				process_req_params* parameters = (process_req_params*)result;
+				std::cout << "cleaner: thread with ID " << tqueue->queue.front() << " terminated (parameters: connfd: "
+						  << parameters->connfd << ", username: " << parameters->username << ")" << std::endl;
+				delete parameters;
 				tqueue->queue.pop();
 			}
 		}

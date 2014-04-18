@@ -1,7 +1,4 @@
-#include <arpa/inet.h>
-#include <cerrno>
 #include <iostream>
-#include <pthread.h>
 #include <syslog.h>
 #include <unistd.h>
 
@@ -44,43 +41,39 @@ int main(int argc, char *argv[])
 
 	while (1)
 	{
-		/* for each new connection, start new thread to process request */
+		std::cout << "listening new connections" << std::endl;
+
+		/* accept new client connection */
 		int connfd;
-		struct sockaddr_in6	cliaddr;
-		socklen_t len = sizeof(cliaddr);
-		if ((connfd = accept(listenfd, (struct sockaddr*)&cliaddr, &len)) < 0)
-		{
-			perror("accept");
+		if ((connfd = accept_connection(listenfd)) < 0)
 			return -1;
-		}
 
-		char buff[80];
-		std::cout << "connection from " << inet_ntop(AF_INET6, &cliaddr.sin6_addr, buff, sizeof(buff))
-				  << ", port " << ntohs(cliaddr.sin6_port) << ", fd is " << connfd << std::endl;
+		/* init thread parameters */
+		process_req_params* parameters = new process_req_params;
+		parameters->connfd = connfd;
+		parameters->username = username;
 
-		int* connfdptr = new int; // to ensure the value hasn't changed when accessed by the started thread
-		*connfdptr = connfd;
-		if (start_thread(process_request, connfdptr, "process_request") < 0)
+		/* start new thread to process client's request */
+		if (start_thread(process_request, parameters, "process_request") < 0)
 			return -1;
 	}
 }
 
 /* thread routine for processing client's request */
-void* process_request(void* fd)
+void* process_request(void* params)
 {
-	int connfd = *(int*)fd;
-	std::cout << "thread " << pthread_self() << ": serving client through fd " << connfd << std::endl;
+	process_req_params parameters = *(process_req_params*)params;
 
-	// read the request from socket
-	http_request request = http_request::from_socket(connfd);
+	/* read request from socket */
+	http_request request = http_request::from_socket(parameters.connfd);
 	request.print();
 
-	//http_response* response = create_response(request);
+	/* create response based on the request */
+	http_response response = http_response::from_request(request, parameters.username);
+	response.print();
 
-
-
-	close(connfd); // fd number can now be reused by new connections
+	close(parameters.connfd);
 
 	enter_queue(joinqueue);
-	return fd;
+	return params;
 }

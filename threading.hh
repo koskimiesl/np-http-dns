@@ -15,6 +15,13 @@ struct thread_queue
     pthread_cond_t condv; // condition of interest: queue has items
 };
 
+/* parameters passed to each request processing thread */
+struct process_req_params
+{
+	int connfd;
+	std::string username;
+};
+
 /* thread routine for cleaning completed request processing threads */
 void* cleaner(void* queue);
 
