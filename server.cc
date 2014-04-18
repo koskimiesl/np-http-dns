@@ -10,7 +10,7 @@
 
 thread_queue joinqueue; // request processing threads ready to be joined
 
-void* process_request(void* fd);
+void* process_request(void* params);
 
 int main(int argc, char *argv[])
 {
@@ -23,12 +23,16 @@ int main(int argc, char *argv[])
 
 	if (!debug)
 	{
-		std::cout << "starting daemon..." << std::endl;
+		std::cout << "starting server as daemon..." << std::endl;
 		if (daemon_init("httpserver", LOG_WARNING) < 0)
 			return -1;
 		syslog(LOG_NOTICE, "started");
 		closelog();
 	}
+
+	/* create serving directory if it doesn't exist */
+	if (create_dir(servpath) < 0)
+		return -1;
 
 	joinqueue = create_queue();
 
@@ -52,6 +56,7 @@ int main(int argc, char *argv[])
 		process_req_params* parameters = new process_req_params;
 		parameters->connfd = connfd;
 		parameters->username = username;
+		parameters->servpath = servpath;
 
 		/* start new thread to process client's request */
 		if (start_thread(process_request, parameters, "process_request") < 0)

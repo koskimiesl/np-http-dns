@@ -23,9 +23,12 @@ void* cleaner(void* queue)
 				return queue;
 			}
 			process_req_params* parameters = (process_req_params*)result;
-			std::cout << "cleaner: thread with ID " << tqueue->queue.front() << " terminated (parameters: connfd: "
-					  << parameters->connfd << ", username: " << parameters->username << ")" << std::endl;
-			delete parameters;
+			std::cout << "cleaner: thread with ID " << tqueue->queue.front() << " terminated (parameters: "
+					  << "connfd: " << parameters->connfd
+					  << ", username: " << parameters->username
+					  << ", servpath: " << parameters->servpath
+					  << ")" << std::endl;
+			delete parameters; // free the memory that was allocated before starting the thread
 			tqueue->queue.pop();
 		}
 		while (tqueue->queue.empty()) // if queue is empty, wait for condition (i.e. when queue has items)
@@ -45,9 +48,12 @@ void* cleaner(void* queue)
 					return queue;
 				}
 				process_req_params* parameters = (process_req_params*)result;
-				std::cout << "cleaner: thread with ID " << tqueue->queue.front() << " terminated (parameters: connfd: "
-						  << parameters->connfd << ", username: " << parameters->username << ")" << std::endl;
-				delete parameters;
+				std::cout << "cleaner: thread with ID " << tqueue->queue.front() << " terminated (parameters: "
+						  << "connfd: " << parameters->connfd
+						  << ", username: " << parameters->username
+						  << ", servpath: " << parameters->servpath
+						  << ")" << std::endl;
+				delete parameters; // free the memory that was allocated before starting the thread
 				tqueue->queue.pop();
 			}
 		}

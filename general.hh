@@ -5,6 +5,8 @@
 
 #include <string>
 
+int create_dir(std::string path);
+
 int get_client_opts(int argc, char** argv, std::string& hostname, std::string& port,
 					std::string& method, std::string& filename, std::string& username);
 

@@ -10,6 +10,23 @@
 
 #define MAXPORT 65535
 
+int create_dir(std::string path)
+{
+	struct stat st;
+	if (stat(path.c_str(), &st) == 0) // path exists
+	{
+		std::cout << "directory '" << path << "' exists" << std::endl;
+		return 0;
+	}
+	if (mkdir(path.c_str(), 0777) < 0)
+	{
+		perror("mkdir");
+		return -1;
+	}
+	std::cout << "created directory '" << path << "'" << std::endl;
+	return 0;
+}
+
 int get_client_opts(int argc, char** argv, std::string& hostname, std::string& port,
 					std::string& method, std::string& filename, std::string& username)
 {

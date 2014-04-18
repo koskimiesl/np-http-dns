@@ -20,6 +20,7 @@ struct process_req_params
 {
 	int connfd;
 	std::string username;
+	std::string servpath;
 };
 
 /* thread routine for cleaning completed request processing threads */
