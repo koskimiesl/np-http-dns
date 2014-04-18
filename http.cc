@@ -1,19 +1,28 @@
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <map>
 #include <sstream>
 #include <unistd.h>
 #include <vector>
 
 #include "http.hh"
+#include "networking.hh"
 
 #define RECVBUFSIZE 1024
 
-static const std::string supportedprotocol = "HTTP/1.1";
+static const std::string sprotocol = "HTTP/1.1"; // supported protocol
+static const std::string scontenttype = "text/plain"; // supported content type
 static const std::string delimiter = "\r\n\r\n";
 static const char* method_strings[] = {"NOT SET", "GET", "PUT", "UNSUPPORTED"};
+
+static std::map<std::string, http_method> stringtomethod = { {"NOT SET", http_method::NOT_SET},
+															 {"GET", http_method::GET},
+															 {"PUT", http_method::PUT},
+															 {"UNSUPPORTED", http_method::UNSUPPORTED} };
 
 const char* http_message::status_code_strings[] = {"NOT SET", // default value
 												   "200 OK",
@@ -107,7 +116,7 @@ void http_message::parse_req_header()
 			fs.close();
 			content_length = length;
 
-			if (it++ != tokens.end() && *it == supportedprotocol)
+			if (it++ != tokens.end() && *it == sprotocol)
 			{
 				status_code = http_status_code::_200_OK_;
 				return;
@@ -131,7 +140,7 @@ void http_message::parse_req_header()
 			else // new file will be created
 				status_code = http_status_code::_201_CREATED_;
 
-			if (!(it++ != tokens.end() && *it == supportedprotocol))
+			if (!(it++ != tokens.end() && *it == sprotocol))
 			{
 				status_code = http_status_code::_400_BAD_REQUEST_;
 				return;
@@ -243,7 +252,7 @@ bool http_message::parse_resp_header(std::string header)
 std::string http_message::create_header() const
 {
 	std::stringstream ss;
-	ss << method_to_str(method) << " " << filename << " " << supportedprotocol << "\r\n";
+	ss << method_to_str(method) << " " << filename << " " << sprotocol << "\r\n";
 	ss << "Host: " << host << "\r\n";
 	if (method == http_method::PUT)
 	{
@@ -258,7 +267,7 @@ std::string http_message::create_header() const
 std::string http_message::create_resp_header(std::string username) const
 {
 	std::stringstream ss;
-	ss << supportedprotocol << " " << status_code_strings[status_code] << "\r\n";
+	ss << sprotocol << " " << status_code_strings[status_code] << "\r\n";
 	ss << "Content-Type: text/plain" << "\r\n";
 	if (method == http_method::GET)
 	{
@@ -289,6 +298,9 @@ const std::string http_message::method_to_str(http_method m) const
 {
 	return method_strings[m];
 }
+
+http_request::http_request() : method(http_method::NOT_SET), content_length(0)
+{ }
 
 http_request http_request::from_socket(int sockfd)
 {
@@ -331,8 +343,33 @@ http_request http_request::from_socket(int sockfd)
 	return request;
 }
 
-http_request::http_request() : method(http_method::NOT_SET), content_length(0)
-{ }
+http_request http_request::from_params(std::string method, std::string filename, std::string hostname, std::string username)
+{
+	http_request request;
+
+	std::transform(method.begin(), method.end(), method.begin(), ::toupper); // method to upper case
+	switch (stringtomethod[method])
+	{
+	case http_method::GET:
+		request.method = http_method::GET;
+		break;
+	case http_method::PUT:
+		request.method = http_method::PUT;
+		break;
+	default:
+		request.method = http_method::UNSUPPORTED;
+		break;
+	}
+
+	request.filename = filename;
+	request.protocol = sprotocol;
+	request.hostname = hostname;
+	request.username = username;
+
+	request.create_header();
+
+	return request;
+}
 
 void http_request::parse_header()
 {
@@ -402,7 +439,24 @@ void http_request::print() const
 			  << "Method: " << method_strings[method] << std::endl
 			  << "Filename: " << filename << std::endl
 			  << "Protocol: " << protocol << std::endl
+			  << "Hostname: " << hostname << std::endl
+			  << "Username: " << username << std::endl
 			  << "Content-Type: " << content_type << std::endl
 			  << "Content-Length: " << content_length << std::endl
 			  << "*********************" << std::endl << std::endl;
+}
+
+void http_request::create_header()
+{
+	std::stringstream headerss;
+	headerss << method_strings[method] << " " << filename << " " << sprotocol << "\r\n";
+	headerss << "Host: " << hostname << "\r\n";
+	headerss << "Iam: " << username << "\r\n";
+	if (method == http_method::PUT)
+	{
+		headerss << "Content-Type: " << scontenttype << "\r\n";
+		headerss << "Content-Length: " << content_length << "\r\n";
+	}
+
+	header = headerss.str();
 }

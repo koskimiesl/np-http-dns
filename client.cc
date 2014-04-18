@@ -19,33 +19,27 @@
 
 int main(int argc, char *argv[])
 {
-	int sockfd, sent, recvd;
+	int recvd;
 
-	std::string hostname;
-	std::string port;
-	std::string method;
-	std::string filename;
-	std::string username;
+	std::string hostname, port, method, filename, username;
 	if (get_client_opts(argc, argv, hostname, port, method, filename, username) < 0)
 		return -1;
 
-	// allow method in lower or upper case
-	std::transform(method.begin(), method.end(), method.begin(), ::toupper);
+	/* create request based on command line parameters */
+	http_request request = http_request::from_params(method, filename, hostname, username);
+	request.print();
 
-	http_message request;
+	/* connect to server */
+	int sockfd;
+	if ((sockfd = tcp_connect(hostname, port)) < 0)
+		return -1;
 
-	if (method == "GET")
-	{
-		request = http_message(http_method::GET, filename, hostname, username);
-		std::string message = request.create_header();
+	/* send request */
+	int sent;
+	if ((sent = send_message(sockfd, request.header)) < 0)
+		return -1;
 
-		sockfd = tcp_connect(hostname, port);
-		if (sockfd < 0)
-			return -1;
-
-		if ((sent = send_message(sockfd, message)) < 0)
-			return -1;
-	}
+	/*
 	else if (method == "PUT")
 	{
 		std::ifstream file(argv[2]);
@@ -85,6 +79,7 @@ int main(int argc, char *argv[])
 		std::cerr << "'" << method << "' method not supported" << std::endl;
 		return -1;
 	}
+	*/
 
 	std::cout << sent << " bytes sent" << std::endl;
 
@@ -183,7 +178,7 @@ int main(int argc, char *argv[])
 	}
 
 	if (close(sockfd) < 0)
-		perror("Error closing socket");
+		perror("close");
 
 	return 0;
 }

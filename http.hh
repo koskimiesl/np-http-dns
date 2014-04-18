@@ -86,6 +86,15 @@ public:
 	 * returns: request object */
 	static http_request from_socket(int sockfd);
 
+	/* Return request object by constructing it from parameters
+	 *
+	 * param method:
+	 * param filename:
+	 * param hostname:
+	 * param username:
+	 * returns: request object */
+	static http_request from_params(std::string method, std::string filename, std::string hostname, std::string username);
+
 	void print() const;
 
 	std::string header;
@@ -93,11 +102,14 @@ public:
 	http_method method;
 	std::string filename;
 	std::string protocol;
+	std::string hostname;
+	std::string username;
 	std::string content_type;
 	size_t content_length;
 
 private:
 
+	void create_header();
 	void parse_header();
 };
 
