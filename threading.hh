@@ -21,6 +21,7 @@ struct process_req_params
 	int connfd;
 	std::string username;
 	std::string servpath;
+	bool errors; // true if errors occured in thread routine
 };
 
 /* thread routine for cleaning completed request processing threads */

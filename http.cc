@@ -12,6 +12,7 @@
 
 #include "general.hh"
 #include "http.hh"
+#include "networking.hh"
 
 #define RECVBUFSIZE 1024
 
@@ -38,6 +39,15 @@ static std::map<http_status_code, std::string> statustostr = { {http_status_code
 															   {http_status_code::_404_NOT_FOUND_, "404 Not Found"},
 														 	   {http_status_code::_501_NOT_IMPLEMENTED_, "501 Not Implemented"},
 															   {http_status_code::_UNSUPPORTED_, "UNSUPPORTED"} };
+
+static std::map<std::string, http_status_code> strtostatus = { {"NOT SET", http_status_code::_NOT_SET_},
+															   {"200 OK", http_status_code::_200_OK_},
+															   {"201 Created", http_status_code::_201_CREATED_},
+															   {"400 Bad Request", http_status_code::_400_BAD_REQUEST_},
+															   {"403 Forbidden", http_status_code::_403_FORBIDDEN_},
+															   {"404 Not Found", http_status_code::_404_NOT_FOUND_},
+														 	   {"501 Not Implemented", http_status_code::_501_NOT_IMPLEMENTED_},
+															   {"UNSUPPORTED", http_status_code::_UNSUPPORTED_} };
 
 const char* http_message::status_code_strings[] = {"NOT SET", // default value
 												   "200 OK",
@@ -476,6 +486,24 @@ void http_request::print() const
 			  << "*****************************" << std::endl << std::endl;
 }
 
+bool http_request::send(int sockfd, std::string dirpath) const
+{
+	/* determine if message will continue after header */
+	bool payloadfollows = method == http_method::PUT;
+
+	/* send header */
+	if (!send_message(sockfd, header, payloadfollows))
+		return false;
+
+	/* send payload if needed */
+	if (payloadfollows)
+	{
+		if (!send_text_file(sockfd, dirpath, filename, content_length))
+			return false;
+	}
+	return true;
+}
+
 void http_request::create_header()
 {
 	std::stringstream headerss;
@@ -491,20 +519,21 @@ void http_request::create_header()
 	header = headerss.str();
 }
 
-http_response::http_response() : status_code(http_status_code::_NOT_SET_), content_length(0)
+http_response::http_response() : status_code(http_status_code::_NOT_SET_), content_length(0), request_method(http_method::NOT_SET)
 { }
 
-http_response http_response::from_request(http_request request, std::string username)
+http_response http_response::from_request(http_request request, std::string servpath, std::string username)
 {
 	http_response response;
 	response.request_method = request.method;
+	response.request_filename = request.filename;
 	response.protocol = sprotocol;
 
 	switch (request.method)
 	{
 	case http_method::GET:
 		int filesize;
-		if ((filesize = get_file_size(request.filename)) < 0)
+		if ((filesize = get_file_size(servpath + "/" + request.filename)) < 0)
 			response.status_code = http_status_code::_404_NOT_FOUND_;
 		else
 		{
@@ -524,6 +553,22 @@ http_response http_response::from_request(http_request request, std::string user
 	return response;
 }
 
+http_response http_response::from_socket(int sockfd)
+{
+	http_response response;
+
+	std::string header;
+	if (!read_header(sockfd, delimiter, header))
+		return response;
+
+	response.header = header;
+
+	/* parse header fields from the header */
+	response.parse_header();
+
+	return response;
+}
+
 void http_response::print() const
 {
 	std::cout << std::endl << "*** Response header ***" << std::endl
@@ -538,6 +583,24 @@ void http_response::print() const
 			  << "******************************" << std::endl << std::endl;
 }
 
+bool http_response::send(int sockfd, std::string servpath) const
+{
+	/* determine if message will continue after header */
+	bool payloadfollows = request_method == http_method::GET && status_code == http_status_code::_200_OK_;
+
+	/* send header */
+	if (!send_message(sockfd, header, payloadfollows))
+		return false;
+
+	/* send payload if needed */
+	if (payloadfollows)
+	{
+		if (!send_text_file(sockfd, servpath, request_filename, content_length))
+			return false;
+	}
+	return true;
+}
+
 void http_response::create_header()
 {
 	std::stringstream headerss;
@@ -550,4 +613,60 @@ void http_response::create_header()
 	}
 	headerss << "\r\n";
 	header = headerss.str();
+}
+
+void http_response::parse_header()
+{
+	using namespace std;
+	istringstream headeriss(header);
+	string line; // single line in header
+
+	/* parse first line */
+	if (!getline(headeriss, line))
+		return;
+	istringstream lineiss(line);
+	vector<string> tokens{istream_iterator<string>{lineiss}, istream_iterator<string>{}};
+	if (tokens.size() == 0)
+		return;
+	vector<string>::const_iterator it = tokens.begin();
+	protocol = *it;
+	it++;
+	string statuscode;
+	while (it != tokens.end())
+	{
+		statuscode += *it;
+		it++;
+		if (it != tokens.end())
+			statuscode += " ";
+	}
+	status_code = strtostatus[statuscode];
+
+	/* parse rest of lines */
+	while (getline(headeriss, line))
+	{
+		istringstream lineiss(line);
+		vector<string> tokens{istream_iterator<string>{lineiss}, istream_iterator<string>{}};
+		if (tokens.size() > 0)
+		{
+			vector<string>::const_iterator it = tokens.begin();
+			if (*it == "Iam:")
+			{
+				if (it++ != tokens.end())
+					username = *it;
+			}
+			else if (*it == "Content-Type:")
+			{
+				if (it++ != tokens.end())
+					content_type = *it;
+			}
+			else if (*it == "Content-Length:")
+			{
+				if (it++ != tokens.end())
+				{
+					istringstream iss(*it);
+					iss >> content_length; // convert to size_t
+				}
+			}
+		}
+	}
 }

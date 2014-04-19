@@ -57,6 +57,7 @@ int main(int argc, char *argv[])
 		parameters->connfd = connfd;
 		parameters->username = username;
 		parameters->servpath = servpath;
+		parameters->errors = false;
 
 		/* start new thread to process client's request */
 		if (start_thread(process_request, parameters, "process_request") < 0)
@@ -74,8 +75,12 @@ void* process_request(void* params)
 	request.print();
 
 	/* create response based on the request */
-	http_response response = http_response::from_request(request, parameters.username);
+	http_response response = http_response::from_request(request, parameters.servpath, parameters.username);
 	response.print();
+
+	/* send the response */
+	if (!response.send(parameters.connfd, parameters.servpath))
+		parameters.errors = true;
 
 	close(parameters.connfd);
 

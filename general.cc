@@ -27,16 +27,17 @@ int create_dir(std::string path)
 	return 0;
 }
 
-int get_client_opts(int argc, char** argv, std::string& hostname, std::string& port,
-					std::string& method, std::string& filename, std::string& username)
+int get_client_opts(int argc, char** argv, std::string& hostname, std::string& port, std::string& method,
+					std::string& filename, std::string& username, std::string& dirpath)
 {
 	bool hostnamegiven = false;
 	bool portgiven = false;
 	bool methodgiven = false;
 	bool filenamegiven = false;
 	bool usernamegiven = false;
+	bool dirpathgiven = false;
 	char opt;
-	while ((opt = getopt(argc, argv, "h:p:m:f:u:")) != -1)
+	while ((opt = getopt(argc, argv, "h:p:m:f:u:d:")) != -1)
 	{
 		switch (opt)
 		{
@@ -60,15 +61,19 @@ int get_client_opts(int argc, char** argv, std::string& hostname, std::string& p
 			username = std::string(optarg);
 			usernamegiven = true;
 			break;
+		case 'd':
+			dirpath = std::string(optarg);
+			dirpathgiven = true;
+			break;
 		case '?':
 			break;
 		default:
 			break;
 		}
 	}
-	if (!hostnamegiven || !portgiven || !methodgiven || !filenamegiven || !usernamegiven)
+	if (!hostnamegiven || !portgiven || !methodgiven || !filenamegiven || !usernamegiven || !dirpathgiven)
 	{
-		std::cerr << "usage: ./httpclient -h hostname -p port -m method -f filename -u username" << std::endl;
+		std::cerr << "usage: ./httpclient -h hostname -p port -m method -f filename -u username -d dirpath" << std::endl;
 		return -1;
 	}
 	return 0;

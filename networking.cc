@@ -1,5 +1,7 @@
 #include <arpa/inet.h>
+#include <cerrno>
 #include <cstring>
+#include <fstream>
 #include <iostream>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -9,6 +11,8 @@
 #include "networking.hh"
 
 #define LISTENQLEN 5
+#define READBUFSIZE 1024
+#define SENDBUFSIZE 512
 
 int accept_connection(int listenfd)
 {
@@ -71,6 +75,129 @@ int create_and_listen(unsigned short port)
 	return listenfd;
 }
 
+bool read_header(int sockfd, std::string delimiter, std::string& header)
+{
+	bool delimiterfound = false;
+	int recvd;
+	char byte; // 1 byte buffer
+	std::string readtotal;
+	size_t foundidx; // index of start of delimiter
+	while (!delimiterfound && (recvd = read(sockfd, &byte, 1)) == 1)
+	{
+		readtotal += std::string(&byte, 1);
+		foundidx = readtotal.find(delimiter);
+		if (foundidx != std::string::npos)
+		{
+			std::cout << "delimiter found at index " << foundidx << std::endl;
+			delimiterfound = true;
+			header = readtotal.substr(0, foundidx + delimiter.length()); // include delimiter to header
+		}
+	}
+	if (recvd < 0)
+	{
+		if (errno == EAGAIN || errno == EWOULDBLOCK)
+			std::cerr << "read: " << strerror(errno) << " (read from socket timed out)" << std::endl;
+		else
+			perror("read");
+		return false;
+	}
+	if (!delimiterfound)
+	{
+		std::cerr << "delimiter not found" << std::endl;
+		return false;
+	}
+	return true;
+}
+
+bool send_message(int sockfd, std::string message, bool continues)
+{
+	const char* msg = message.c_str();
+	std::cout << std::endl << "sending message:" << std::endl << msg << std::endl;
+	size_t remaining = strlen(msg); // number of bytes remaining to send
+
+	/* if message doesn't continue (i.e. no payload), write also terminating null character */
+	if (!continues)
+		remaining++;
+
+	ssize_t sent;
+	size_t byteidx = 0;
+	size_t chunktosend = SENDBUFSIZE;
+	while (remaining > 0)
+	{
+		if (remaining < chunktosend)
+			chunktosend = remaining;
+		if ((sent = write(sockfd, &msg[byteidx], chunktosend)) < 0)
+		{
+			perror("write");
+			return false;
+		}
+		byteidx += sent;
+		remaining -= sent;
+		std::cout << sent << " bytes sent, " << remaining << " bytes remaining" << std::endl;
+	}
+	if (remaining == 0)
+		return true;
+	std::cerr << "bytes remaining is not zero!" << std::endl;
+	return false;
+}
+
+bool send_text_file(int sockfd, std::string servpath, std::string filename, size_t filesize)
+{
+	std::ifstream fs(servpath + "/" + filename);
+	if (!fs.good()) // check stream state
+	{
+		std::cerr << "file stream error" << std::endl;
+		return false;
+	}
+
+	/* read file in chunks */
+	char readbuffer[READBUFSIZE];
+	int chunktoread = READBUFSIZE;
+	size_t readremaining = filesize;
+	while (readremaining > 0)
+	{
+		if (readremaining < (size_t)chunktoread)
+			chunktoread = readremaining;
+		fs.read(readbuffer, chunktoread);
+		if (!fs.good() && !fs.eof())
+		{
+			std::cerr << "file stream error (not eof)" << std::endl;
+			fs.close();
+			return false;
+		}
+		readremaining -= chunktoread;
+		std::cout << chunktoread << " bytes read from file, " << readremaining << " bytes remaining" << std::endl;
+
+		/* send read chunk to socket in chunks */
+		size_t sendremaining = chunktoread; // number of bytes remaining to send
+		ssize_t sent;
+		size_t byteidx = 0;
+		size_t chunktosend = SENDBUFSIZE;
+		while (sendremaining > 0)
+		{
+			if (sendremaining < chunktosend)
+				chunktosend = sendremaining;
+			if ((sent = write(sockfd, &readbuffer[byteidx], chunktosend)) < 0)
+			{
+				perror("write");
+				fs.close();
+				return false;
+			}
+			byteidx += sent;
+			sendremaining -= sent;
+			std::cout << sent << " bytes sent, " << sendremaining << " bytes remaining" << std::endl;
+		}
+		if (sendremaining != 0)
+		{
+			std::cerr << "send remaining is not zero!" << std::endl;
+			fs.close();
+			return false;
+		}
+	}
+	fs.close();
+	return true;
+}
+
 void print_address(const char *prefix, const struct addrinfo *res)
 {
 	/* slightly modified from lecture example */
@@ -92,48 +219,6 @@ void print_address(const char *prefix, const struct addrinfo *res)
 
 	const char *ret = inet_ntop(res->ai_family, address, outbuf, sizeof(outbuf));
 	std::cout << prefix << " " << ret << std::endl;
-}
-
-int send_message(int sockfd, std::string message)
-{
-	const char* msg = message.c_str();
-	std::cout << std::endl << "sending message:" << std::endl << msg << std::endl;
-	size_t remaining = strlen(msg) + 1;; // number of bytes remaining to send
-	ssize_t sent;
-	size_t byteidx = 0;
-	size_t chunktosend = 10;
-	while (remaining > 0)
-	{
-		if (remaining < chunktosend)
-			chunktosend = remaining;
-		if ((sent = write(sockfd, &msg[byteidx], chunktosend)) < 0)
-		{
-			perror("write");
-			return -1;
-		}
-		byteidx += sent;
-		remaining -= sent;
-		std::cout << sent << " bytes sent, " << remaining << " bytes remaining" << std::endl;
-	}
-	if (remaining == 0)
-		return 0;
-	std::cerr << "bytes remaining is not zero!" << std::endl;
-	return -1;
-}
-
-int send_message(int sockfd, std::string header, const char* payload, size_t pllength)
-{
-	std::cout << std::endl << "Sending header:" << std::endl << header << std::endl;
-	const char* msg = header.c_str();
-	int hsent, psent;
-	if ((hsent = write(sockfd, msg, strlen(msg))) < 0) // don't write null character because message continues
-		std::cerr << "Error in writing to socket" << std::endl;
-	if ((psent = write(sockfd, payload, pllength)) < 0)
-		std::cerr << "Error in writing to socket" << std::endl;
-
-	std::cout << hsent << " bytes of header sent" << std::endl;
-	std::cout << psent << " bytes of payload sent" << std::endl;
-	return hsent + psent;
 }
 
 int tcp_connect(std::string hostname, std::string port)

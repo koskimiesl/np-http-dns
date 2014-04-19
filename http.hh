@@ -97,6 +97,7 @@ public:
 	static http_request from_params(std::string method, std::string filename, std::string hostname, std::string username);
 
 	void print() const;
+	bool send(int sockfd, std::string dirpath) const;
 
 	std::string header; // whole header
 
@@ -121,9 +122,11 @@ public:
 	/* Constructor */
 	http_response();
 
-	static http_response from_request(http_request request, std::string username);
+	static http_response from_request(http_request request, std::string servpath, std::string username);
+	static http_response from_socket(int sockfd);
 
 	void print() const;
+	bool send(int sockfd, std::string servpath) const;
 
 	std::string header; // whole header
 
@@ -134,10 +137,12 @@ public:
 	size_t content_length;
 
 	http_method request_method;
+	std::string request_filename;
 
 private:
 
 	void create_header();
+	void parse_header();
 };
 
 #endif

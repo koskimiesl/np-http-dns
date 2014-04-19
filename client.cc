@@ -19,10 +19,14 @@
 
 int main(int argc, char *argv[])
 {
-	int recvd;
+	//int recvd;
 
-	std::string hostname, port, method, filename, username;
-	if (get_client_opts(argc, argv, hostname, port, method, filename, username) < 0)
+	std::string hostname, port, method, filename, username, dirpath;
+	if (get_client_opts(argc, argv, hostname, port, method, filename, username, dirpath) < 0)
+		return -1;
+
+	/* create directory for files if it doesn't exist */
+	if (create_dir(dirpath) < 0)
 		return -1;
 
 	/* create request based on command line parameters */
@@ -34,10 +38,13 @@ int main(int argc, char *argv[])
 	if ((sockfd = tcp_connect(hostname, port)) < 0)
 		return -1;
 
-	/* send request */
-	int sent;
-	if ((sent = send_message(sockfd, request.header)) < 0)
+	/* send the request */
+	if (!request.send(sockfd, dirpath))
 		return -1;
+
+	/* read response from socket */
+	http_response response = http_response::from_socket(sockfd);
+	response.print();
 
 	/*
 	else if (method == "PUT")
@@ -81,7 +88,7 @@ int main(int argc, char *argv[])
 	}
 	*/
 
-
+	/*
 	// handle response
 	char buffer[RECVBUFSIZE];
 	bool emptylinefound = false;
@@ -174,6 +181,7 @@ int main(int argc, char *argv[])
 			break;
 		}
 	}
+	*/
 
 	if (close(sockfd) < 0)
 		perror("close");
