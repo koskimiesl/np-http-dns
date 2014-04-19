@@ -70,15 +70,15 @@ void* process_request(void* params)
 {
 	process_req_params parameters = *(process_req_params*)params;
 
-	/* read request from socket */
-	http_request request = http_request::from_socket(parameters.connfd);
-	request.print();
+	/* read request header from socket */
+	http_request request = http_request::receive_header(parameters.connfd);
+	request.print_header();
 
-	/* create response based on the request */
-	http_response response = http_response::from_request(request, parameters.servpath, parameters.username);
-	response.print();
+	/* process request and form response header */
+	http_response response = http_response::proc_req_and_form_header(parameters.connfd, request, parameters.servpath, parameters.username);
+	response.print_header();
 
-	/* send the response */
+	/* write response to socket */
 	if (!response.send(parameters.connfd, parameters.servpath))
 		parameters.errors = true;
 

@@ -10,6 +10,39 @@
 
 #define MAXPORT 65535
 
+file_status check_file(std::string path, file_permissions perm)
+{
+	/* check file existence */
+	if (access(path.c_str(), F_OK) < 0)
+	{
+		perror("access");
+		return file_status::DOES_NOT_EXIST;
+	}
+
+	/* check file permissions */
+	switch (perm)
+	{
+	case file_permissions::READ:
+		if (access(path.c_str(), R_OK) < 0)
+		{
+			perror("access");
+			return file_status::ACCESS_FAILURE;
+		}
+		break;
+	case file_permissions::WRITE:
+		if (access(path.c_str(), W_OK) < 0)
+		{
+			perror("access");
+			return file_status::ACCESS_FAILURE;
+		}
+		break;
+	default:
+		return file_status::ACCESS_FAILURE;
+	}
+
+	return file_status::OK;
+}
+
 int create_dir(std::string path)
 {
 	struct stat st;
@@ -81,14 +114,6 @@ int get_client_opts(int argc, char** argv, std::string& hostname, std::string& p
 
 int get_file_size(std::string path)
 {
-	/* check file existence and read permission */
-	if (access(path.c_str(), R_OK) < 0)
-	{
-		perror("access");
-		return -1;
-	}
-
-	/* determine file size */
 	std::ifstream fs(path);
 	if (!fs.good()) // check stream state
 	{

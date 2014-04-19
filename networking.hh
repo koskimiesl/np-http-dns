@@ -18,6 +18,8 @@ int create_and_listen(unsigned short port);
 
 bool read_header(int sockfd, std::string delimiter, std::string& header);
 
+bool recv_text_file(int sockfd, std::string dirpath, std::string filename, size_t filesize);
+
 /* Send string message to socket
  * Caller must open and close the socket descriptor
  *

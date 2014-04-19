@@ -109,6 +109,39 @@ bool read_header(int sockfd, std::string delimiter, std::string& header)
 	return true;
 }
 
+bool recv_text_file(int sockfd, std::string dirpath, std::string filename, size_t filesize)
+{
+	std::ofstream fs(dirpath + "/" + filename);
+	if (!fs.good()) // check stream state
+	{
+		std::cerr << "file stream error" << std::endl;
+		return false;
+	}
+
+	size_t recvdsofar = 0;
+	int recvd;
+	char buffer[READBUFSIZE];
+	while (recvdsofar < filesize && (recvd = read(sockfd, buffer, READBUFSIZE)) > 0)
+	{
+		std::string chunk(buffer, recvd);
+		recvdsofar += recvd;
+		fs << chunk;
+	}
+	fs.close();
+	if (recvd == 0)
+	{
+		std::cerr << "EOF" << std::endl;
+		return false;
+	}
+	if (recvd < 0)
+	{
+		perror("read");
+		return false;
+	}
+
+	return true;
+}
+
 bool send_message(int sockfd, std::string message, bool continues)
 {
 	const char* msg = message.c_str();
