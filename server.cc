@@ -1,5 +1,6 @@
 #include <iostream>
 #include <syslog.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
 #include "daemon.hh"
@@ -82,7 +83,18 @@ void* process_request(void* params)
 	if (!response.send(parameters.connfd, parameters.servpath))
 		parameters.errors = true;
 
-	close(parameters.connfd);
+	/* to reduce "connection reset by peer" errors in the receiving end */
+	if (shutdown(parameters.connfd, SHUT_RDWR) < 0)
+	{
+		perror("shutdown");
+		parameters.errors = true;
+	}
+
+	if (close(parameters.connfd) < 0)
+	{
+		perror("close");
+		parameters.errors = true;
+	}
 
 	enter_queue(joinqueue);
 	return params;

@@ -12,6 +12,7 @@ enum http_method
 	NOT_SET, // default value
 	GET,
 	PUT,
+	POST,
 	UNSUPPORTED
 };
 
@@ -40,11 +41,14 @@ public:
 	/* Create HTTP request header by constructing it from parameters
 	 *
 	 * param method:
+	 * param dirpath:
 	 * param filename:
 	 * param hostname:
 	 * param username:
+	 * param queryname:
 	 * returns: http_request object */
-	static http_request form_header(std::string method, std::string dirpath, std::string filename, std::string hostname, std::string username);
+	static http_request form_header(std::string method, std::string dirpath, std::string filename,
+									std::string hostname, std::string username, std::string queryname);
 
 	/* Read HTTP request header from socket
 	 * Caller must open and close the socket descriptor
@@ -73,10 +77,13 @@ public:
 	std::string username;
 	std::string content_type;
 	size_t content_length;
+	std::string queryname;
+	std::string querytype;
 
 private:
 
 	void create_header();
+	std::string get_query_body() const;
 	void parse_header();
 };
 
@@ -123,11 +130,14 @@ public:
 
 	http_method request_method;
 	std::string request_filename;
+	std::string request_qname;
+	std::string request_qtype;
 
 private:
 
 	void create_header();
 	void parse_header();
+	bool parse_req_query_params(const std::string& querybody);
 };
 
 class http_exception : public std::runtime_error

@@ -109,9 +109,35 @@ bool read_header(int sockfd, std::string delimiter, std::string& header)
 	return true;
 }
 
+bool recv_body(int sockfd, size_t contentlen, std::string& body)
+{
+	size_t recvdsofar = 0;
+	int recvd;
+	char buffer[READBUFSIZE];
+	std::string bodyrecvd;
+	while (recvdsofar < contentlen && (recvd = read(sockfd, buffer, READBUFSIZE)) > 0)
+	{
+		std::string chunk(buffer, recvd);
+		recvdsofar += recvd;
+		bodyrecvd += chunk;
+	}
+	if (recvd == 0)
+	{
+		std::cerr << "EOF" << std::endl;
+		return false;
+	}
+	if (recvd < 0)
+	{
+		perror("read");
+		return false;
+	}
+	body = bodyrecvd;
+	return true;
+}
+
 bool recv_text_file(int sockfd, std::string dirpath, std::string filename, size_t filesize)
 {
-	std::ofstream fs(dirpath + "/" + filename);
+	std::ofstream fs(dirpath + filename);
 	if (!fs.good()) // check stream state
 	{
 		std::cerr << "file stream error" << std::endl;
@@ -127,30 +153,36 @@ bool recv_text_file(int sockfd, std::string dirpath, std::string filename, size_
 		recvdsofar += recvd;
 		fs << chunk;
 	}
-	fs.close();
+	if (recvd < 0)
+	{
+		std::cerr << "recvd: " << recvd << " errno: " << errno << std::endl;
+		perror("recv_text_file: read");
+		fs.close();
+		return false;
+	}
 	if (recvd == 0)
 	{
 		std::cerr << "EOF" << std::endl;
+		fs.close();
 		return false;
 	}
-	if (recvd < 0)
-	{
-		perror("read");
-		return false;
-	}
-
+	fs.close();
 	return true;
 }
 
-bool send_message(int sockfd, std::string message, bool continues)
+bool send_message(int sockfd, std::string message, bool uselength, size_t contentlen, bool continues)
 {
 	const char* msg = message.c_str();
 	std::cout << std::endl << "sending message:" << std::endl << msg << std::endl;
-	size_t remaining = strlen(msg); // number of bytes remaining to send
-
-	/* if message doesn't continue (i.e. no payload), write also terminating null character */
-	if (!continues)
-		remaining++;
+	size_t remaining; // number of bytes remaining to send
+	if (uselength) // use the given content length
+		remaining = contentlen;
+	else
+	{
+		remaining = strlen(msg);
+		if (!continues) // if message doesn't continue, write also terminating null character
+			remaining++;
+	}
 
 	ssize_t sent;
 	size_t byteidx = 0;
@@ -176,7 +208,7 @@ bool send_message(int sockfd, std::string message, bool continues)
 
 bool send_text_file(int sockfd, std::string servpath, std::string filename, size_t filesize)
 {
-	std::ifstream fs(servpath + "/" + filename);
+	std::ifstream fs(servpath + filename);
 	if (!fs.good()) // check stream state
 	{
 		std::cerr << "file stream error" << std::endl;

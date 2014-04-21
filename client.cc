@@ -19,19 +19,19 @@
 
 int main(int argc, char *argv[])
 {
-	std::string hostname, port, method, filename, username, dirpath;
-	if (get_client_opts(argc, argv, hostname, port, method, filename, username, dirpath) < 0)
+	std::string hostname, port, method, filename, username, dirpath, queryname;
+	if (get_client_opts(argc, argv, hostname, port, method, filename, username, dirpath, queryname) < 0)
 		return -1;
 
 	/* create directory for files if it doesn't exist */
-	if (create_dir(dirpath) < 0)
+	if (method != "POST" && create_dir(dirpath) < 0)
 		return -1;
 
 	/* create request header based on command line parameters */
 	http_request request;
 	try
 	{
-		request = http_request::form_header(method, dirpath, filename, hostname, username);
+		request = http_request::form_header(method, dirpath, filename, hostname, username, queryname);
 	}
 	catch (const http_exception& e)
 	{

@@ -17,17 +17,22 @@
 #define RECVBUFSIZE 1024
 
 static const std::string sprotocol = "HTTP/1.1"; // supported protocol
-static const std::string scontenttype = "text/plain"; // supported content type
+static const std::string sctypegetput = "text/plain"; // supported content type for GET and PUT
+static const std::string sctypepost = "application/x-www-form-urlencoded"; // supported content type for POST
+static const std::string squerytype = "A"; // supported DNS query type
+static const std::string spostresource = "/dns-query"; // supported POST resource
 static const std::string delimiter = "\r\n\r\n";
 
 static std::map<std::string, http_method> strtomethod = { {"NOT SET", http_method::NOT_SET},
 														  {"GET", http_method::GET},
 														  {"PUT", http_method::PUT},
+														  {"POST", http_method::POST},
 														  {"UNSUPPORTED", http_method::UNSUPPORTED} };
 
 static std::map<http_method, std::string> methodtostr = { {http_method::NOT_SET, "NOT SET"},
 														  {http_method::GET, "GET"},
 														  {http_method::PUT, "PUT"},
+														  {http_method::POST, "POST"},
 														  {http_method::UNSUPPORTED, "UNSUPPORTED"} };
 
 static std::map<http_status_code, std::string> statustostr = { {http_status_code::_NOT_SET_, "NOT SET"},
@@ -55,15 +60,16 @@ static std::map<std::string, http_status_code> strtostatus = { {"NOT SET", http_
 http_request::http_request() : method(http_method::NOT_SET), content_length(0)
 { }
 
-http_request http_request::form_header(std::string method, std::string dirpath, std::string filename, std::string hostname, std::string username)
+http_request http_request::form_header(std::string method, std::string dirpath, std::string filename,
+									   std::string hostname, std::string username, std::string queryname)
 {
 	http_request request;
 
-	std::transform(method.begin(), method.end(), method.begin(), ::toupper); // method string to upper case
 	switch (strtomethod[method])
 	{
 	case http_method::GET:
 		request.method = http_method::GET;
+		request.filename = filename;
 		break;
 	case http_method::PUT:
 		int filesize;
@@ -72,15 +78,23 @@ http_request http_request::form_header(std::string method, std::string dirpath, 
 			throw http_exception();
 		if ((filesize = get_file_size(dirpath + "/" + filename)) < 0)
 			throw http_exception();
+		request.filename = filename;
+		request.content_type = sctypegetput;
 		request.content_length = filesize;
-		request.content_type = scontenttype;
+		break;
+	case http_method::POST:
+		request.method = http_method::POST;
+		request.filename = spostresource;
+		request.content_type = sctypepost;
+		request.queryname = queryname;
+		request.querytype = squerytype;
+		request.content_length = strlen(request.get_query_body().c_str()) + 1; // includes terminating null character
 		break;
 	default:
 		request.method = http_method::UNSUPPORTED;
 		break;
 	}
 
-	request.filename = filename;
 	request.protocol = sprotocol;
 	request.hostname = hostname;
 	request.username = username;
@@ -125,17 +139,25 @@ void http_request::print_header() const
 bool http_request::send(int sockfd, std::string dirpath) const
 {
 	/* determine if message will continue after header */
-	bool payloadfollows = method == http_method::PUT;
+	bool payloadfollows = method == http_method::PUT || method == http_method::POST;
 
 	/* send header */
-	if (!send_message(sockfd, header, payloadfollows))
+	if (!send_message(sockfd, header, false, 0, payloadfollows))
 		return false;
 
 	/* send payload if needed */
 	if (payloadfollows)
 	{
-		if (!send_text_file(sockfd, dirpath, filename, content_length))
-			return false;
+		if (method == http_method::PUT)
+		{
+			if (!send_text_file(sockfd, dirpath, filename, content_length))
+				return false;
+		}
+		else if (method == http_method::POST)
+		{
+			if (!send_message(sockfd, get_query_body(), true, content_length, false))
+				return false;
+		}
 	}
 	return true;
 }
@@ -143,16 +165,21 @@ bool http_request::send(int sockfd, std::string dirpath) const
 void http_request::create_header()
 {
 	std::stringstream headerss;
-	headerss << methodtostr[method] << " " << filename << " " << sprotocol << "\r\n";
+	headerss << methodtostr[method] << " " << filename << " " << protocol << "\r\n";
 	headerss << "Host: " << hostname << "\r\n";
 	headerss << "Iam: " << username << "\r\n";
-	if (method == http_method::PUT)
+	if (method == http_method::PUT || method == http_method::POST)
 	{
-		headerss << "Content-Type: " << scontenttype << "\r\n";
+		headerss << "Content-Type: " << content_type << "\r\n";
 		headerss << "Content-Length: " << content_length << "\r\n";
 	}
 	headerss << "\r\n";
 	header = headerss.str();
+}
+
+std::string http_request::get_query_body() const
+{
+	return "Name=" + queryname + "&Type=" + querytype;
 }
 
 void http_request::parse_header()
@@ -173,14 +200,16 @@ void http_request::parse_header()
 		method = http_method::GET;
 	else if (*it == "PUT")
 		method = http_method::PUT;
+	else if (*it == "POST")
+		method = http_method::POST;
 	else
 		method = http_method::UNSUPPORTED;
 	if (it++ != tokens.end())
 	{
 		if ((*it).length() > 0)
 		{
-			if ((*it).at(0) == '/') // ignore slash in the beginning of path
-				filename = (*it).substr(1);
+			if ((*it).at(0) != '/') // add slash in front of URI if it doesn't exist
+				filename = "/" + *it;
 			else
 				filename = *it;
 		}
@@ -235,9 +264,10 @@ http_response http_response::proc_req_and_form_header(int sockfd, http_request r
 	response.request_method = request.method;
 	response.request_filename = request.filename;
 	response.protocol = sprotocol;
-	std::string filepath = servpath + "/" + request.filename;
+	std::string filepath = servpath + request.filename;
 
 	file_status getfilestatus, putfilestatus;
+	std::string qbody;
 
 	switch (request.method)
 	{
@@ -248,12 +278,12 @@ http_response http_response::proc_req_and_form_header(int sockfd, http_request r
 		{
 		case file_status::OK:
 			int filesize;
-			if ((filesize = get_file_size(servpath + "/" + request.filename)) < 0)
+			if ((filesize = get_file_size(servpath + request.filename)) < 0)
 				response.status_code = http_status_code::_500_INTERNAL_ERROR_;
 			else
 			{
 				response.status_code = http_status_code::_200_OK_;
-				response.content_type = scontenttype;
+				response.content_type = sctypegetput;
 				response.content_length = filesize;
 			}
 			break;
@@ -270,12 +300,12 @@ http_response http_response::proc_req_and_form_header(int sockfd, http_request r
 
 		break;
 	case http_method::PUT:
-		if (request.content_type != scontenttype)
+		if (request.content_type != sctypegetput)
 		{
 			response.status_code = http_status_code::_415_UNSUPPORTED_MEDIA_TYPE_;
 			break;
 		}
-		putfilestatus = check_file(servpath + "/" + request.filename, file_permissions::WRITE);
+		putfilestatus = check_file(servpath + request.filename, file_permissions::WRITE);
 
 		switch (putfilestatus)
 		{
@@ -296,6 +326,33 @@ http_response http_response::proc_req_and_form_header(int sockfd, http_request r
 			break;
 		default:
 			response.status_code = http_status_code::_500_INTERNAL_ERROR_;
+			break;
+		}
+
+		break;
+	case http_method::POST:
+		if (request.filename != spostresource)
+		{
+			response.status_code = http_status_code::_404_NOT_FOUND_;
+			break;
+		}
+		if (request.content_type != sctypepost)
+		{
+			response.status_code = http_status_code::_415_UNSUPPORTED_MEDIA_TYPE_;
+			break;
+		}
+
+		/* read query body from socket */
+		if (!recv_body(sockfd, request.content_length, qbody))
+		{
+			response.status_code = http_status_code::_500_INTERNAL_ERROR_;
+			break;
+		}
+
+		/* parse required parameters from body */
+		if (!response.parse_req_query_params(qbody))
+		{
+			response.status_code = http_status_code::_400_BAD_REQUEST_;
 			break;
 		}
 
@@ -328,7 +385,10 @@ http_response http_response::receive(int sockfd, http_method reqmethod, std::str
 	bool payloadfollows = reqmethod == http_method::GET && response.status_code == http_status_code::_200_OK_;
 
 	if (payloadfollows)
+	{
+		std::cout << "receiving payload..." << std::endl;
 		recv_text_file(sockfd, dirpath, filename, response.content_length); // read payload
+	}
 
 	return response;
 }
@@ -353,7 +413,7 @@ bool http_response::send(int sockfd, std::string servpath) const
 	bool payloadfollows = request_method == http_method::GET && status_code == http_status_code::_200_OK_;
 
 	/* send header */
-	if (!send_message(sockfd, header, payloadfollows))
+	if (!send_message(sockfd, header, false, 0, payloadfollows))
 		return false;
 
 	/* send payload if needed */
@@ -433,6 +493,48 @@ void http_response::parse_header()
 			}
 		}
 	}
+}
+
+bool http_response::parse_req_query_params(const std::string& querybody)
+{
+	/* split parameters into a vector */
+	std::vector<std::string> params = split_string(querybody, '&');
+
+	/* read key and value from parameter */
+	std::vector<std::string>::const_iterator paramsit = params.begin();
+	bool qname = false;
+	bool qtype = false;
+	while (paramsit != params.end())
+	{
+		std::vector<std::string> paramtokens = split_string(*paramsit, '=');
+		std::vector<std::string>::const_iterator tokensit = paramtokens.begin();
+		if (tokensit != paramtokens.end())
+		{
+			std::string key = to_upper(*tokensit);
+			tokensit++;
+			if (tokensit != paramtokens.end())
+			{
+				std::string value = *tokensit;
+				if (key == "NAME")
+				{
+					std::cout << "parsed value for 'Name': " << value << std::endl;
+					request_qname = value;
+					qname = true;
+				}
+				else if (key == "TYPE")
+				{
+					std::cout << "parsed value for 'Type': " << value << std::endl;
+					request_qtype = value;
+					qtype = true;
+				}
+			}
+		}
+		paramsit++;
+	}
+	if (qname && qtype)
+		return true;
+
+	return false;
 }
 
 http_exception::http_exception() : std::runtime_error("http_exception")

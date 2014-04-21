@@ -1,8 +1,11 @@
+#include <algorithm>
 #include <climits>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <string>
+#include <sstream>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -61,7 +64,7 @@ int create_dir(std::string path)
 }
 
 int get_client_opts(int argc, char** argv, std::string& hostname, std::string& port, std::string& method,
-					std::string& filename, std::string& username, std::string& dirpath)
+					std::string& filename, std::string& username, std::string& dirpath, std::string& queryname)
 {
 	bool hostnamegiven = false;
 	bool portgiven = false;
@@ -69,8 +72,9 @@ int get_client_opts(int argc, char** argv, std::string& hostname, std::string& p
 	bool filenamegiven = false;
 	bool usernamegiven = false;
 	bool dirpathgiven = false;
+	bool querynamegiven = false;
 	char opt;
-	while ((opt = getopt(argc, argv, "h:p:m:f:u:d:")) != -1)
+	while ((opt = getopt(argc, argv, "h:p:m:f:u:d:q:")) != -1)
 	{
 		switch (opt)
 		{
@@ -88,6 +92,11 @@ int get_client_opts(int argc, char** argv, std::string& hostname, std::string& p
 			break;
 		case 'f':
 			filename = std::string(optarg);
+
+			/* put slash in front of URI/filename if it doesn't exist */
+			if (filename.at(0) != '/')
+				filename = "/" + filename;
+
 			filenamegiven = true;
 			break;
 		case 'u':
@@ -98,17 +107,40 @@ int get_client_opts(int argc, char** argv, std::string& hostname, std::string& p
 			dirpath = std::string(optarg);
 			dirpathgiven = true;
 			break;
+		case 'q':
+			queryname = std::string(optarg);
+			querynamegiven = true;
+			break;
 		case '?':
 			break;
 		default:
 			break;
 		}
 	}
-	if (!hostnamegiven || !portgiven || !methodgiven || !filenamegiven || !usernamegiven || !dirpathgiven)
+
+	std::transform(method.begin(), method.end(), method.begin(), ::toupper); // method to upper case
+	if (method == "GET" || method == "PUT")
 	{
-		std::cerr << "usage: ./httpclient -h hostname -p port -m method -f filename -u username -d dirpath" << std::endl;
+		if (!hostnamegiven || !portgiven || !methodgiven || !filenamegiven || !usernamegiven || !dirpathgiven)
+		{
+			std::cerr << "usage for GET and PUT: ./httpclient -h hostname -p port -m method -f filename -u username -d dirpath" << std::endl;
+			return -1;
+		}
+	}
+	else if (method == "POST")
+	{
+		if (!hostnamegiven || !portgiven || !methodgiven || !querynamegiven || !usernamegiven)
+		{
+			std::cerr << "usage for POST: ./httpclient -h hostname -p port -m method -q queryname -u username" << std::endl;
+			return -1;
+		}
+	}
+	else
+	{
+		std::cerr << "supported methods: GET, PUT, POST" << std::endl;
 		return -1;
 	}
+
 	return 0;
 }
 
@@ -177,4 +209,22 @@ int get_server_opts(int argc, char** argv, unsigned short& port, bool& debug,
 		return -1;
 	}
 	return 0;
+}
+
+std::vector<std::string> split_string(const std::string& str, char delimiter)
+{
+    std::stringstream ss(str);
+    std::string item;
+    std::vector<std::string> elements;
+    while (std::getline(ss, item, delimiter))
+    	elements.push_back(item);
+
+    return elements;
+}
+
+std::string to_upper(const std::string& str)
+{
+	std::string uppstr = str;
+	std::transform(uppstr.begin(), uppstr.end(), uppstr.begin(), ::toupper);
+	return uppstr;
 }
