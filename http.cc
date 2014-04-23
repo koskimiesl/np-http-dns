@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <vector>
 
+#include "dns.hh"
 #include "general.hh"
 #include "http.hh"
 #include "networking.hh"
@@ -355,6 +356,8 @@ http_response http_response::proc_req_and_form_header(int sockfd, http_request r
 			response.status_code = http_status_code::_400_BAD_REQUEST_;
 			break;
 		}
+		std::cout << "sending query..." << std::endl;
+		send_query();
 
 		break;
 	default:
