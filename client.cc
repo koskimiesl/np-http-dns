@@ -27,11 +27,14 @@ int main(int argc, char *argv[])
 	if (method != "POST" && create_dir(dirpath) < 0)
 		return -1;
 
+	http_conf conf;
+
 	/* create request header based on command line parameters */
-	http_request request;
+	http_request& request;
 	try
 	{
-		request = http_request::form_header(method, dirpath, filename, hostname, username, queryname);
+		http_request req = http_request::form_header(conf, method, dirpath, filename, hostname, username, queryname);
+		request = req;
 	}
 	catch (const http_exception& e)
 	{

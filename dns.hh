@@ -1,8 +1,12 @@
+/* Minimal DNS query implementation */
 
 #ifndef NETPROG_DNS_HH
 #define NETPROG_DNS_HH
 
 #include <cstdint>
+#include <string>
+
+#define SQUERYTYPE "A" // supported DNS query type
 
 struct dns_header
 {
@@ -26,6 +30,14 @@ struct dns_header
 	uint16_t arcount; // number of additional entries (16 bits)
 };
 
+struct dns_question
+{
+	char* qname;
+	uint16_t qtype;
+	uint16_t qclass;
+};
+
+/*
 struct dns_qfields
 {
 	uint16_t qtype;
@@ -34,9 +46,12 @@ struct dns_qfields
 
 struct dns_question
 {
-	unsigned char* qname;
+	uint8_t* qname;
 	struct dns_qfields* qfields;
 };
+*/
+
+
 
 struct dns_rfields
 {
@@ -53,6 +68,6 @@ struct dns_res_record
 	unsigned char* rdata;
 };
 
-void send_query();
+void send_query(std::string queryname, std::string querytype);
 
 #endif

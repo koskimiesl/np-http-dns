@@ -71,8 +71,10 @@ void* process_request(void* params)
 {
 	process_req_params parameters = *(process_req_params*)params;
 
+	http_conf conf;
+
 	/* read request header from socket */
-	http_request request = http_request::receive_header(parameters.connfd);
+	http_request request = http_request::receive_header(parameters.connfd, conf);
 	request.print_header();
 
 	/* process request and form response header */

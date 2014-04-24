@@ -1,10 +1,10 @@
 CPP = g++
 FLAGS = -std=c++0x -Wall -Wextra -pedantic -lpthread
 
-objects_server = server.o daemon.o dns.o general.o http.o networking.o threading.o
-objects_client = client.o dns.o general.o http.o networking.o
+objects_server = server.o daemon.o dns.o general.o http.o httpconf.o networking.o threading.o
+objects_client = client.o dns.o general.o http.o httpconf.o networking.o
 
-objects = server.o client.o daemon.o dns.o general.o http.o networking.o threading.o
+objects = server.o client.o daemon.o dns.o general.o http.o httpconf.o networking.o threading.o
 
 PROGS = server client
 
@@ -33,6 +33,9 @@ general.o: general.cc
 
 http.o: http.cc
 	$(CPP) -c $^ $(FLAGS)
+	
+httpconf.o: httpconf.cc
+	$(CPP) -c $^ $(FLAGS)
 
 networking.o: networking.cc
 	$(CPP) -c $^ $(FLAGS)
@@ -47,6 +50,7 @@ daemon.o: daemon.hh
 dns.o: dns.hh
 general.o: general.hh
 http.o: dns.hh general.hh http.hh networking.hh
+httpconf.o: httpconf.hh
 networking.o: networking.hh
 threading.o: threading.hh
 

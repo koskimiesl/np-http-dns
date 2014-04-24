@@ -6,37 +6,14 @@
 #include <stdexcept>
 #include <string>
 
-/* supported methods */
-enum http_method
-{
-	NOT_SET, // default value
-	GET,
-	PUT,
-	POST,
-	UNSUPPORTED
-};
-
-/* supported status codes */
-enum http_status_code
-{
-	_NOT_SET_, // default value
-	_200_OK_,
-	_201_CREATED_,
-	_400_BAD_REQUEST_,
-	_403_FORBIDDEN_,
-	_404_NOT_FOUND_,
-	_415_UNSUPPORTED_MEDIA_TYPE_,
-	_500_INTERNAL_ERROR_,
-	_501_NOT_IMPLEMENTED_,
-	_UNSUPPORTED_
-};
+#include "httpconf.hh"
 
 class http_request
 {
 public:
 
 	/* Constructor */
-	http_request();
+	http_request(const http_conf& conf);
 
 	/* Create HTTP request header by constructing it from parameters
 	 *
@@ -47,7 +24,7 @@ public:
 	 * param username:
 	 * param queryname:
 	 * returns: http_request object */
-	static http_request form_header(std::string method, std::string dirpath, std::string filename,
+	static http_request form_header(const http_conf& conf, std::string method, std::string dirpath, std::string filename,
 									std::string hostname, std::string username, std::string queryname);
 
 	/* Read HTTP request header from socket
@@ -55,7 +32,7 @@ public:
 	 *
 	 * param sockfd: socket descriptor with receive timeout set
 	 * returns: request object */
-	static http_request receive_header(int sockfd);
+	static http_request receive_header(int sockfd, const http_conf& conf);
 
 	/* Print whole header and parsed values */
 	void print_header() const;
@@ -85,6 +62,8 @@ private:
 	void create_header();
 	std::string get_query_body() const;
 	void parse_header();
+
+	const http_conf& conf; // HTTP configuration to use
 };
 
 class http_response
@@ -123,7 +102,7 @@ public:
 	std::string header; // whole header
 
 	std::string protocol;
-	http_status_code status_code;
+	http_status status_code;
 	std::string username;
 	std::string content_type;
 	size_t content_length;
