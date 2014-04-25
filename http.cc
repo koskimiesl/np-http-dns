@@ -1,11 +1,9 @@
 #include <algorithm>
-#include <cerrno>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
 #include <iostream>
 #include <iterator>
-#include <map>
 #include <sstream>
 #include <unistd.h>
 #include <vector>
@@ -15,45 +13,9 @@
 #include "http.hh"
 #include "networking.hh"
 
-#define RECVBUFSIZE 1024
-
-static const std::string sctypegetput = "text/plain"; // supported content type for GET and PUT
-static const std::string sctypepost = "application/x-www-form-urlencoded"; // supported content type for POST
-
-static const std::string spostresource = "/dns-query"; // supported POST resource
-static const std::string delimiter = "\r\n\r\n";
-
-static std::map<http_method, std::string> methodtostr = { {http_method::NOT_SET, "NOT SET"},
-														  {http_method::GET, "GET"},
-														  {http_method::PUT, "PUT"},
-														  {http_method::POST, "POST"},
-														  {http_method::UNSUPPORTED, "UNSUPPORTED"} };
-
-static std::map<http_status, std::string> statustostr = { {http_status::_NOT_SET_, "NOT SET"},
-															   {http_status::_200_OK_, "200 OK"},
-															   {http_status::_201_CREATED_, "201 Created"},
-															   {http_status::_400_BAD_REQUEST_, "400 Bad Request"},
-															   {http_status::_403_FORBIDDEN_, "403 Forbidden"},
-															   {http_status::_404_NOT_FOUND_, "404 Not Found"},
-															   {http_status::_415_UNSUPPORTED_MEDIA_TYPE_, "415 Unsupported Media Type"},
-															   {http_status::_500_INTERNAL_ERROR_, "500 Internal Error"},
-														 	   {http_status::_501_NOT_IMPLEMENTED_, "501 Not Implemented"},
-															   {http_status::_UNSUPPORTED_, "UNSUPPORTED"} };
-
-static std::map<std::string, http_status> strtostatus = { {"NOT SET", http_status::_NOT_SET_},
-															   {"200 OK", http_status::_200_OK_},
-															   {"201 Created", http_status::_201_CREATED_},
-															   {"400 Bad Request", http_status::_400_BAD_REQUEST_},
-															   {"403 Forbidden", http_status::_403_FORBIDDEN_},
-															   {"404 Not Found", http_status::_404_NOT_FOUND_},
-															   {"415 Unsupported Media Type", http_status::_415_UNSUPPORTED_MEDIA_TYPE_},
-															   {"500 Internal Error", http_status::_500_INTERNAL_ERROR_},
-														 	   {"501 Not Implemented", http_status::_501_NOT_IMPLEMENTED_},
-															   {"UNSUPPORTED", http_status::_UNSUPPORTED_} };
-
-http_request::http_request(const http_conf& conf) : header(), method(http_method::NOT_SET), filename(),
-													hostname(), username(), content_type(), content_length(0),
-													queryname(), querytype(), conf(conf)
+http_request::http_request(const http_conf& conf) : header(), method(http_method::NOT_SET_MET), filename(),
+													protocol(http_protocol::NOT_SET_PROT), hostname(), username(),
+													content_type(), content_length(0), queryname(), querytype(), conf(conf)
 { }
 
 http_request http_request::form_header(const http_conf& conf, std::string method, std::string dirpath, std::string filename,
@@ -61,6 +23,7 @@ http_request http_request::form_header(const http_conf& conf, std::string method
 {
 	http_request req(conf);
 	req.method = req.conf.to_method(method);
+	req.protocol = req.conf.protocol;
 
 	switch (req.method)
 	{
@@ -69,17 +32,17 @@ http_request http_request::form_header(const http_conf& conf, std::string method
 		break;
 	case http_method::PUT:
 		int filesize;
-		if (check_file(dirpath + "/" + filename, file_permissions::READ) != file_status::OK)
+		if (check_file_status(dirpath + filename, file_permissions::READ) != file_status::OK)
 			throw http_exception("failed to check file existence and access permissions");
-		if ((filesize = get_file_size(dirpath + "/" + filename)) < 0)
+		if ((filesize = check_file_size(dirpath + filename)) < 0)
 			throw http_exception("failed to get file size");
 		req.filename = filename;
-		req.content_type = sctypegetput;
+		req.content_type = req.conf.ctypegetput;
 		req.content_length = filesize;
 		break;
 	case http_method::POST:
-		req.filename = spostresource;
-		req.content_type = sctypepost;
+		req.filename = req.conf.uripost;
+		req.content_type = req.conf.ctypepost;
 		req.queryname = queryname;
 		req.querytype = SQUERYTYPE;
 		req.content_length = strlen(req.get_query_body().c_str()) + 1; // includes terminating null character
@@ -98,18 +61,18 @@ http_request http_request::form_header(const http_conf& conf, std::string method
 
 http_request http_request::receive_header(const http_conf& conf, int sockfd)
 {
-	http_request request(conf);
+	http_request req(conf);
 	std::string header;
 
-	if (!read_header(sockfd, delimiter, header))
-		return request;
+	if (!read_header(sockfd, req.conf.delimiter, header))
+		return req;
 
-	request.header = header;
+	req.header = header;
 
 	/* parse header fields from the header */
-	request.parse_header();
+	req.parse_header();
 
-	return request;
+	return req;
 }
 
 void http_request::print_header() const
@@ -118,9 +81,9 @@ void http_request::print_header() const
 			  << header << std::endl
 			  << "**********************" << std::endl << std::endl
 			  << "*** Request header values ***" << std::endl
-			  << "Method: " << methodtostr[method] << std::endl
+			  << "Method: " << conf.to_str(method) << std::endl
 			  << "Filename: " << filename << std::endl
-			  << "Protocol: " << protocol << std::endl
+			  << "Protocol: " << conf.to_str(protocol) << std::endl
 			  << "Hostname: " << hostname << std::endl
 			  << "Username: " << username << std::endl
 			  << "Content-Type: " << content_type << std::endl
@@ -157,7 +120,7 @@ bool http_request::send(int sockfd, std::string dirpath) const
 void http_request::create_header()
 {
 	std::stringstream headerss;
-	headerss << methodtostr[method] << " " << filename << " " << protocol << "\r\n";
+	headerss << conf.to_str(method) << " " << filename << " " << conf.to_str(protocol) << "\r\n";
 	headerss << "Host: " << hostname << "\r\n";
 	headerss << "Iam: " << username << "\r\n";
 	if (method == http_method::PUT || method == http_method::POST)
@@ -220,20 +183,24 @@ bool http_request::parse_header()
 			vector<string>::const_iterator itvalue = itfield + 1; // field value
 			if (itvalue == tokens.end()) return false;
 
-			switch(conf.to_hfield(*itfield))
+			istringstream valueiss(*itvalue); // for type conversions
+			switch(conf.to_hfield(to_upper(*itfield))) // recognize field in case-insensitive fashion
 			{
 			case http_hfield::HOST:
-				hostname = *itvalue;
+				valueiss >> hostname;
 				break;
 			case http_hfield::IAM:
-				username = *itvalue;
+				valueiss >> username;
 				break;
 			case http_hfield::CONTENT_TYPE:
-				content_type = *itvalue;
+				valueiss >> content_type;
 				break;
 			case http_hfield::CONTENT_LEN:
-				istringstream iss(*itvalue);
-				iss >> content_length; // convert to size_t
+				valueiss >> content_length;
+				break;
+			case http_hfield::UNSUPP_HF:
+				break; // ignore unsupported field
+			default:
 				break;
 			}
 		}
@@ -242,14 +209,15 @@ bool http_request::parse_header()
 	return true;
 }
 
-http_response::http_response(const http_conf& conf) : header(), protocol(), status_code(http_status::_NOT_SET_), username(),
-													  content_type(), content_length(0), request_method(http_method::NOT_SET),
+http_response::http_response(const http_conf& conf) : header(), protocol(http_protocol::NOT_SET_PROT), status(http_status::NOT_SET_ST), username(),
+													  content_type(), content_length(0), request_method(http_method::NOT_SET_MET),
 													  request_filename(), request_qname(), request_qtype(), conf(conf)
 { }
 
 http_response http_response::proc_req_form_header(const http_conf& conf, int sockfd, http_request req, std::string servpath, std::string username)
 {
 	http_response resp(conf);
+	resp.protocol = resp.conf.protocol;
 	resp.request_method = req.method;
 	resp.request_filename = req.filename;
 	std::string filepath = servpath + req.filename;
@@ -260,94 +228,94 @@ http_response http_response::proc_req_form_header(const http_conf& conf, int soc
 	switch (req.method)
 	{
 	case http_method::GET:
-		getfilestatus = check_file(filepath, file_permissions::READ);
+		getfilestatus = check_file_status(filepath, file_permissions::READ);
 
 		switch (getfilestatus)
 		{
 		case file_status::OK:
 			int filesize;
-			if ((filesize = get_file_size(servpath + req.filename)) < 0)
-				resp.status_code = http_status::_500_INTERNAL_ERROR_;
+			if ((filesize = check_file_size(servpath + req.filename)) < 0)
+				resp.status = http_status::INTERNAL_ERROR_500;
 			else
 			{
-				resp.status_code = http_status::_200_OK_;
-				resp.content_type = sctypegetput;
+				resp.status = http_status::OK_200;
+				resp.content_type = resp.conf.ctypegetput;
 				resp.content_length = filesize;
 			}
 			break;
 		case file_status::DOES_NOT_EXIST:
-			resp.status_code = http_status::_404_NOT_FOUND_;
+			resp.status = http_status::NOT_FOUND_404;
 			break;
 		case file_status::ACCESS_FAILURE:
-			resp.status_code = http_status::_403_FORBIDDEN_;
+			resp.status = http_status::FORBIDDEN_403;
 			break;
 		default:
-			resp.status_code = http_status::_500_INTERNAL_ERROR_;
+			resp.status = http_status::INTERNAL_ERROR_500;
 			break;
 		}
 
 		break;
 	case http_method::PUT:
-		if (req.content_type != sctypegetput)
+		if (req.content_type != resp.conf.ctypegetput)
 		{
-			resp.status_code = http_status::_415_UNSUPPORTED_MEDIA_TYPE_;
+			resp.status = http_status::UNSUPPORTED_MEDIA_TYPE_415;
 			break;
 		}
-		putfilestatus = check_file(servpath + req.filename, file_permissions::WRITE);
+		putfilestatus = check_file_status(servpath + req.filename, file_permissions::WRITE);
 
 		switch (putfilestatus)
 		{
 		case file_status::DOES_NOT_EXIST:
 			if (recv_text_file(sockfd, servpath, req.filename, req.content_length))
-				resp.status_code = http_status::_201_CREATED_;
+				resp.status = http_status::CREATED_201;
 			else
-				resp.status_code = http_status::_500_INTERNAL_ERROR_;
+				resp.status = http_status::INTERNAL_ERROR_500;
 			break;
 		case file_status::OK:
 			if (recv_text_file(sockfd, servpath, req.filename, req.content_length))
-				resp.status_code = http_status::_200_OK_;
+				resp.status = http_status::OK_200;
 			else
-				resp.status_code = http_status::_500_INTERNAL_ERROR_;
+				resp.status = http_status::INTERNAL_ERROR_500;
 			break;
 		case file_status::ACCESS_FAILURE:
-			resp.status_code = http_status::_403_FORBIDDEN_;
+			resp.status = http_status::FORBIDDEN_403;
 			break;
 		default:
-			resp.status_code = http_status::_500_INTERNAL_ERROR_;
+			resp.status = http_status::INTERNAL_ERROR_500;
 			break;
 		}
 
 		break;
 	case http_method::POST:
-		if (req.filename != spostresource)
+		if (req.filename != resp.conf.uripost)
 		{
-			resp.status_code = http_status::_404_NOT_FOUND_;
+			resp.status = http_status::NOT_FOUND_404;
 			break;
 		}
-		if (req.content_type != sctypepost)
+		if (req.content_type != resp.conf.ctypepost)
 		{
-			resp.status_code = http_status::_415_UNSUPPORTED_MEDIA_TYPE_;
+			resp.status = http_status::UNSUPPORTED_MEDIA_TYPE_415;
 			break;
 		}
 
 		/* read query body from socket */
 		if (!recv_body(sockfd, req.content_length, qbody))
 		{
-			resp.status_code = http_status::_500_INTERNAL_ERROR_;
+			resp.status = http_status::INTERNAL_ERROR_500;
 			break;
 		}
 
 		/* parse required parameters from body */
 		if (!resp.parse_req_query_params(qbody))
 		{
-			resp.status_code = http_status::_400_BAD_REQUEST_;
+			resp.status = http_status::BAD_REQUEST_400;
 			break;
 		}
 		std::cout << "sending query (name: " << resp.request_qname << ", type: " << resp.request_qtype << ")" << std::endl;
 		send_query(resp.request_qname, resp.request_qtype);
 		break;
 	default:
-		resp.status_code = http_status::_501_NOT_IMPLEMENTED_;
+		resp.status = http_status::NOT_IMPLEMENTED_501;
 		break;
 	}
 
@@ -362,7 +330,7 @@ http_response http_response::receive(const http_conf& conf, int sockfd, http_met
 	http_response resp(conf);
 
 	std::string header;
-	if (!read_header(sockfd, delimiter, header))
+	if (!read_header(sockfd, resp.conf.delimiter, header))
 		return resp;
 
 	resp.header = header;
@@ -371,7 +339,7 @@ http_response http_response::receive(const http_conf& conf, int sockfd, http_met
 	resp.parse_header();
 
 	/* determine if message will continue after header */
-	bool payloadfollows = reqmethod == http_method::GET && resp.status_code == http_status::_200_OK_;
+	bool payloadfollows = reqmethod == http_method::GET && resp.status == http_status::OK_200;
 
 	if (payloadfollows)
 	{
@@ -388,8 +356,8 @@ void http_response::print_header() const
 			  << header << std::endl
 			  << "***********************" << std::endl << std::endl
 			  << "*** Response header values ***" << std::endl
-			  << "Protocol: " << protocol << std::endl
-			  << "Status code: " << statustostr[status_code] << std::endl
+			  << "Protocol: " << conf.to_str(protocol) << std::endl
+			  << "Status code: " << conf.to_str(status) << std::endl
 			  << "Username: " << username << std::endl
 			  << "Content-Type: " << content_type << std::endl
 			  << "Content-Length: " << content_length << std::endl
@@ -399,7 +367,7 @@ void http_response::print_header() const
 bool http_response::send(int sockfd, std::string servpath) const
 {
 	/* determine if message will continue after header */
-	bool payloadfollows = request_method == http_method::GET && status_code == http_status::_200_OK_;
+	bool payloadfollows = request_method == http_method::GET && status == http_status::OK_200;
 
 	/* send header */
 	if (!send_message(sockfd, header, false, 0, payloadfollows))
@@ -417,18 +385,18 @@ bool http_response::send(int sockfd, std::string servpath) const
 void http_response::create_header()
 {
 	std::stringstream headerss;
-	headerss << protocol << " " << statustostr[status_code] << "\r\n";
-	headerss << "Iam: " << username << "\r\n";
-	if (request_method == http_method::GET && status_code == http_status::_200_OK_)
+	headerss << conf.to_str(protocol) << " " << conf.to_str(status) << "\r\n";
+	headerss << conf.to_str(http_hfield::IAM) << " " << username << "\r\n";
+	if (request_method == http_method::GET && status == http_status::OK_200)
 	{
-		headerss << "Content-Type: " << content_type << "\r\n";
-		headerss << "Content-Length: " << content_length << "\r\n";
+		headerss << conf.to_str(http_hfield::CONTENT_TYPE) << " " << content_type << "\r\n";
+		headerss << conf.to_str(http_hfield::CONTENT_LEN) << " " << content_length << "\r\n";
 	}
 	headerss << "\r\n";
 	header = headerss.str();
 }
 
-void http_response::parse_header()
+bool http_response::parse_header()
 {
 	using namespace std;
 	istringstream headeriss(header);
@@ -436,13 +404,13 @@ void http_response::parse_header()
 
 	/* parse first line */
 	if (!getline(headeriss, line))
-		return;
+		return false;
 	istringstream lineiss(line);
 	vector<string> tokens{istream_iterator<string>{lineiss}, istream_iterator<string>{}};
 	if (tokens.size() == 0)
-		return;
+		return false;
 	vector<string>::const_iterator it = tokens.begin();
-	protocol = *it;
+	protocol = conf.to_prot(*it);
 	it++;
 	string statuscode;
 	while (it != tokens.end())
@@ -452,7 +420,7 @@ void http_response::parse_header()
 		if (it != tokens.end())
 			statuscode += " ";
 	}
-	status_code = strtostatus[statuscode];
+	status = conf.to_status(to_upper(statuscode)); // recognize status in case-insensitive fashion
 
 	/* parse rest of lines */
 	while (getline(headeriss, line))
@@ -461,27 +429,31 @@ void http_response::parse_header()
 		vector<string> tokens{istream_iterator<string>{lineiss}, istream_iterator<string>{}};
 		if (tokens.size() > 0)
 		{
-			vector<string>::const_iterator it = tokens.begin();
-			if (*it == "Iam:")
+			vector<string>::const_iterator itfield = tokens.begin();
+			vector<string>::const_iterator itvalue = itfield + 1;
+			if (itvalue == tokens.end()) return false;
+
+			istringstream valueiss(*itvalue); // for type conversions
+			switch (conf.to_hfield(to_upper(*itfield))) // recognize field in case-insensitive fashion
 			{
-				if (it++ != tokens.end())
-					username = *it;
-			}
-			else if (*it == "Content-Type:")
-			{
-				if (it++ != tokens.end())
-					content_type = *it;
-			}
-			else if (*it == "Content-Length:")
-			{
-				if (it++ != tokens.end())
-				{
-					istringstream iss(*it);
-					iss >> content_length; // convert to size_t
-				}
+			case http_hfield::IAM:
+				valueiss >> username;
+				break;
+			case http_hfield::CONTENT_TYPE:
+				valueiss >> content_type;
+				break;
+			case http_hfield::CONTENT_LEN:
+				valueiss >> content_length;
+				break;
+			case http_hfield::UNSUPP_HF:
+				break; // ignore unsuppported field
+			default:
+				break; // ignore unnecessary field
 			}
 		}
 	}
+
+	return true;
 }
 
 bool http_response::parse_req_query_params(const std::string& querybody)

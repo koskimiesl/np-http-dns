@@ -13,8 +13,10 @@
 
 #define MAXPORT 65535
 
-file_status check_file(std::string path, file_permissions perm)
+file_status check_file_status(std::string path, file_permissions perm)
 {
+	std::cout << "checking status of file: " << path << std::endl;
+
 	/* check file existence */
 	if (access(path.c_str(), F_OK) < 0)
 	{
@@ -44,6 +46,23 @@ file_status check_file(std::string path, file_permissions perm)
 	}
 
 	return file_status::OK;
+}
+
+int check_file_size(std::string path)
+{
+	std::cout << "checking size of file: " << path << std::endl;
+
+	std::ifstream fs(path);
+	if (!fs.good()) // check stream state
+	{
+		std::cerr << "file stream error" << std::endl;
+		return -1;
+	}
+	fs.seekg(0, fs.end);
+	int filesize = fs.tellg();
+	fs.close();
+
+	return filesize;
 }
 
 int create_dir(std::string path)
@@ -142,21 +161,6 @@ int get_client_opts(int argc, char** argv, std::string& hostname, std::string& p
 	}
 
 	return 0;
-}
-
-int get_file_size(std::string path)
-{
-	std::ifstream fs(path);
-	if (!fs.good()) // check stream state
-	{
-		std::cerr << "file stream error" << std::endl;
-		return -1;
-	}
-	fs.seekg(0, fs.end);
-	int filesize = fs.tellg();
-	fs.close();
-
-	return filesize;
 }
 
 int get_server_opts(int argc, char** argv, unsigned short& port, bool& debug,

@@ -125,7 +125,7 @@ public:
 
 	std::string header; // whole header
 	http_protocol protocol;
-	http_status status_code;
+	http_status status; // status code
 	std::string username;
 	std::string content_type;
 	size_t content_length;
@@ -145,7 +145,7 @@ private:
 	http_response(const http_conf& conf);
 
 	void create_header();
-	void parse_header();
+	bool parse_header();
 	bool parse_req_query_params(const std::string& querybody);
 
 	const http_conf& conf; // reference to configuration
