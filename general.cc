@@ -228,3 +228,6 @@ std::string to_upper(const std::string& str)
 	std::transform(uppstr.begin(), uppstr.end(), uppstr.begin(), ::toupper);
 	return uppstr;
 }
+
+general_exception::general_exception(const std::string message) : std::runtime_error(message)
+{ }

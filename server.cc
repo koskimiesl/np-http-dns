@@ -11,7 +11,7 @@
 
 thread_queue joinqueue; // request processing threads ready to be joined
 
-void* process_request(void* params);
+void* process_request(void* parameters);
 
 int main(int argc, char *argv[])
 {
@@ -67,37 +67,38 @@ int main(int argc, char *argv[])
 }
 
 /* thread routine for processing client's request */
-void* process_request(void* params)
+void* process_request(void* parameters)
 {
-	process_req_params parameters = *(process_req_params*)params;
+	process_req_params params = *(process_req_params*)parameters;
 
-	http_conf conf;
+	/* HTTP configuration instance for thread */
+	const http_conf conf;
 
 	/* read request header from socket */
-	http_request request = http_request::receive_header(parameters.connfd, conf);
+	http_request request = http_request::receive_header(conf, params.connfd);
 	request.print_header();
 
 	/* process request and form response header */
-	http_response response = http_response::proc_req_and_form_header(parameters.connfd, request, parameters.servpath, parameters.username);
+	http_response response = http_response::proc_req_form_header(conf, params.connfd, request, params.servpath, params.username);
 	response.print_header();
 
 	/* write response to socket */
-	if (!response.send(parameters.connfd, parameters.servpath))
-		parameters.errors = true;
+	if (!response.send(params.connfd, params.servpath))
+		params.errors = true;
 
 	/* to reduce "connection reset by peer" errors in the receiving end */
-	if (shutdown(parameters.connfd, SHUT_RDWR) < 0)
+	if (shutdown(params.connfd, SHUT_RDWR) < 0)
 	{
 		perror("shutdown");
-		parameters.errors = true;
+		params.errors = true;
 	}
 
-	if (close(parameters.connfd) < 0)
+	if (close(params.connfd) < 0)
 	{
 		perror("close");
-		parameters.errors = true;
+		params.errors = true;
 	}
 
 	enter_queue(joinqueue);
-	return params;
+	return parameters;
 }

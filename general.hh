@@ -3,6 +3,7 @@
 #ifndef NETPROG_HELPERS_HH
 #define NETPROG_HELPERS_HH
 
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -34,5 +35,12 @@ int get_server_opts(int argc, char** argv, unsigned short& port, bool& debug,
 std::vector<std::string> split_string(const std::string& str, char delimiter);
 
 std::string to_upper(const std::string& str);
+
+class general_exception : public std::runtime_error
+{
+public:
+
+	general_exception(const std::string message);
+};
 
 #endif

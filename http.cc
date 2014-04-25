@@ -17,18 +17,11 @@
 
 #define RECVBUFSIZE 1024
 
-static const std::string sprotocol = "HTTP/1.1"; // supported protocol
 static const std::string sctypegetput = "text/plain"; // supported content type for GET and PUT
 static const std::string sctypepost = "application/x-www-form-urlencoded"; // supported content type for POST
 
 static const std::string spostresource = "/dns-query"; // supported POST resource
 static const std::string delimiter = "\r\n\r\n";
-
-static std::map<std::string, http_method> strtomethod = { {"NOT SET", http_method::NOT_SET},
-														  {"GET", http_method::GET},
-														  {"PUT", http_method::PUT},
-														  {"POST", http_method::POST},
-														  {"UNSUPPORTED", http_method::UNSUPPORTED} };
 
 static std::map<http_method, std::string> methodtostr = { {http_method::NOT_SET, "NOT SET"},
 														  {http_method::GET, "GET"},
@@ -58,56 +51,52 @@ static std::map<std::string, http_status> strtostatus = { {"NOT SET", http_statu
 														 	   {"501 Not Implemented", http_status::_501_NOT_IMPLEMENTED_},
 															   {"UNSUPPORTED", http_status::_UNSUPPORTED_} };
 
-http_request::http_request(const http_conf& conf) : method(http_method::NOT_SET), content_length(0)
-{
-	this->conf = conf;
-}
+http_request::http_request(const http_conf& conf) : header(), method(http_method::NOT_SET), filename(),
+													hostname(), username(), content_type(), content_length(0),
+													queryname(), querytype(), conf(conf)
+{ }
 
 http_request http_request::form_header(const http_conf& conf, std::string method, std::string dirpath, std::string filename,
 									   std::string hostname, std::string username, std::string queryname)
 {
-	http_request request(conf);
+	http_request req(conf);
+	req.method = req.conf.to_method(method);
 
-	switch (strtomethod[method])
+	switch (req.method)
 	{
 	case http_method::GET:
-		request.method = http_method::GET;
-		request.filename = filename;
+		req.filename = filename;
 		break;
 	case http_method::PUT:
 		int filesize;
-		request.method = http_method::PUT;
 		if (check_file(dirpath + "/" + filename, file_permissions::READ) != file_status::OK)
-			throw http_exception();
+			throw http_exception("failed to check file existence and access permissions");
 		if ((filesize = get_file_size(dirpath + "/" + filename)) < 0)
-			throw http_exception();
-		request.filename = filename;
-		request.content_type = sctypegetput;
-		request.content_length = filesize;
+			throw http_exception("failed to get file size");
+		req.filename = filename;
+		req.content_type = sctypegetput;
+		req.content_length = filesize;
 		break;
 	case http_method::POST:
-		request.method = http_method::POST;
-		request.filename = spostresource;
-		request.content_type = sctypepost;
-		request.queryname = queryname;
-		request.querytype = SQUERYTYPE;
-		request.content_length = strlen(request.get_query_body().c_str()) + 1; // includes terminating null character
+		req.filename = spostresource;
+		req.content_type = sctypepost;
+		req.queryname = queryname;
+		req.querytype = SQUERYTYPE;
+		req.content_length = strlen(req.get_query_body().c_str()) + 1; // includes terminating null character
 		break;
 	default:
-		request.method = http_method::UNSUPPORTED;
-		break;
+		throw http_exception("unsupported HTTP method");
 	}
 
-	request.protocol = sprotocol;
-	request.hostname = hostname;
-	request.username = username;
+	req.hostname = hostname;
+	req.username = username;
 
-	request.create_header();
+	req.create_header();
 
-	return request;
+	return req;
 }
 
-http_request http_request::receive_header(int sockfd, const http_conf& conf)
+http_request http_request::receive_header(const http_conf& conf, int sockfd)
 {
 	http_request request(conf);
 	std::string header;
@@ -185,7 +174,7 @@ std::string http_request::get_query_body() const
 	return "Name=" + queryname + "&Type=" + querytype;
 }
 
-void http_request::parse_header()
+bool http_request::parse_header()
 {
 	using namespace std;
 	istringstream headeriss(header);
@@ -193,35 +182,32 @@ void http_request::parse_header()
 
 	/* parse first line */
 	if (!getline(headeriss, line))
-		return;
+		return false;
 	istringstream lineiss(line);
 	vector<string> tokens{istream_iterator<string>{lineiss}, istream_iterator<string>{}};
-	if (tokens.size() == 0)
-		return;
 	vector<string>::const_iterator it = tokens.begin();
-	if (*it == "GET")
-		method = http_method::GET;
-	else if (*it == "PUT")
-		method = http_method::PUT;
-	else if (*it == "POST")
-		method = http_method::POST;
-	else
-		method = http_method::UNSUPPORTED;
+	if (it == tokens.end())
+		return false;
+	method = conf.to_method(to_upper(*it));
 	if (it++ != tokens.end())
 	{
 		if ((*it).length() > 0)
 		{
-			if ((*it).at(0) != '/') // add slash in front of URI if it doesn't exist
-				filename = "/" + *it;
-			else
+			if ((*it).at(0) == '/')
 				filename = *it;
+			else
+				filename = "/" + *it; // add slash in front of URI if it doesn't exist
 		}
 		else
-			return;
+			return false;
 
 		if (it++ != tokens.end())
-			protocol = *it;
+			protocol = conf.to_prot(to_upper(*it));
+		else
+			return false;
 	}
+	else
+		return false;
 
 	/* parse rest of lines */
 	while (getline(headeriss, line))
@@ -230,49 +216,48 @@ void http_request::parse_header()
 		vector<string> tokens{istream_iterator<string>{lineiss}, istream_iterator<string>{}};
 		if (tokens.size() > 0)
 		{
-			vector<string>::const_iterator it = tokens.begin();
-			if (*it == "Host:")
+			vector<string>::const_iterator itfield = tokens.begin(); // field name
+			vector<string>::const_iterator itvalue = itfield + 1; // field value
+			if (itvalue == tokens.end()) return false;
+
+			switch(conf.to_hfield(*itfield))
 			{
-				if (it++ != tokens.end())
-					hostname = *it;
-			}
-			else if (*it == "Iam:")
-			{
-				if (it++ != tokens.end())
-					username = *it;
-			}
-			else if (*it == "Content-Type:")
-			{
-				if (it++ != tokens.end())
-					content_type = *it;
-			}
-			else if (*it == "Content-Length:")
-			{
-				if (it++ != tokens.end())
-				{
-					istringstream iss(*it);
-					iss >> content_length; // convert to size_t
-				}
+			case http_hfield::HOST:
+				hostname = *itvalue;
+				break;
+			case http_hfield::IAM:
+				username = *itvalue;
+				break;
+			case http_hfield::CONTENT_TYPE:
+				content_type = *itvalue;
+				break;
+			case http_hfield::CONTENT_LEN:
+				istringstream iss(*itvalue);
+				iss >> content_length; // convert to size_t
+				break;
 			}
 		}
 	}
+
+	return true;
 }
 
-http_response::http_response() : status_code(http_status::_NOT_SET_), content_length(0), request_method(http_method::NOT_SET)
+http_response::http_response(const http_conf& conf) : header(), protocol(), status_code(http_status::_NOT_SET_), username(),
+													  content_type(), content_length(0), request_method(http_method::NOT_SET),
+													  request_filename(), request_qname(), request_qtype(), conf(conf)
 { }
 
-http_response http_response::proc_req_and_form_header(int sockfd, http_request request, std::string servpath, std::string username)
+http_response http_response::proc_req_form_header(const http_conf& conf, int sockfd, http_request req, std::string servpath, std::string username)
 {
-	http_response response;
-	response.request_method = request.method;
-	response.request_filename = request.filename;
-	response.protocol = sprotocol;
-	std::string filepath = servpath + request.filename;
+	http_response resp(conf);
+	resp.request_method = req.method;
+	resp.request_filename = req.filename;
+	std::string filepath = servpath + req.filename;
 
 	file_status getfilestatus, putfilestatus;
 	std::string qbody;
 
-	switch (request.method)
+	switch (req.method)
 	{
 	case http_method::GET:
 		getfilestatus = check_file(filepath, file_permissions::READ);
@@ -281,120 +266,120 @@ http_response http_response::proc_req_and_form_header(int sockfd, http_request r
 		{
 		case file_status::OK:
 			int filesize;
-			if ((filesize = get_file_size(servpath + request.filename)) < 0)
-				response.status_code = http_status::_500_INTERNAL_ERROR_;
+			if ((filesize = get_file_size(servpath + req.filename)) < 0)
+				resp.status_code = http_status::_500_INTERNAL_ERROR_;
 			else
 			{
-				response.status_code = http_status::_200_OK_;
-				response.content_type = sctypegetput;
-				response.content_length = filesize;
+				resp.status_code = http_status::_200_OK_;
+				resp.content_type = sctypegetput;
+				resp.content_length = filesize;
 			}
 			break;
 		case file_status::DOES_NOT_EXIST:
-			response.status_code = http_status::_404_NOT_FOUND_;
+			resp.status_code = http_status::_404_NOT_FOUND_;
 			break;
 		case file_status::ACCESS_FAILURE:
-			response.status_code = http_status::_403_FORBIDDEN_;
+			resp.status_code = http_status::_403_FORBIDDEN_;
 			break;
 		default:
-			response.status_code = http_status::_500_INTERNAL_ERROR_;
+			resp.status_code = http_status::_500_INTERNAL_ERROR_;
 			break;
 		}
 
 		break;
 	case http_method::PUT:
-		if (request.content_type != sctypegetput)
+		if (req.content_type != sctypegetput)
 		{
-			response.status_code = http_status::_415_UNSUPPORTED_MEDIA_TYPE_;
+			resp.status_code = http_status::_415_UNSUPPORTED_MEDIA_TYPE_;
 			break;
 		}
-		putfilestatus = check_file(servpath + request.filename, file_permissions::WRITE);
+		putfilestatus = check_file(servpath + req.filename, file_permissions::WRITE);
 
 		switch (putfilestatus)
 		{
 		case file_status::DOES_NOT_EXIST:
-			if (recv_text_file(sockfd, servpath, request.filename, request.content_length))
-				response.status_code = http_status::_201_CREATED_;
+			if (recv_text_file(sockfd, servpath, req.filename, req.content_length))
+				resp.status_code = http_status::_201_CREATED_;
 			else
-				response.status_code = http_status::_500_INTERNAL_ERROR_;
+				resp.status_code = http_status::_500_INTERNAL_ERROR_;
 			break;
 		case file_status::OK:
-			if (recv_text_file(sockfd, servpath, request.filename, request.content_length))
-				response.status_code = http_status::_200_OK_;
+			if (recv_text_file(sockfd, servpath, req.filename, req.content_length))
+				resp.status_code = http_status::_200_OK_;
 			else
-				response.status_code = http_status::_500_INTERNAL_ERROR_;
+				resp.status_code = http_status::_500_INTERNAL_ERROR_;
 			break;
 		case file_status::ACCESS_FAILURE:
-			response.status_code = http_status::_403_FORBIDDEN_;
+			resp.status_code = http_status::_403_FORBIDDEN_;
 			break;
 		default:
-			response.status_code = http_status::_500_INTERNAL_ERROR_;
+			resp.status_code = http_status::_500_INTERNAL_ERROR_;
 			break;
 		}
 
 		break;
 	case http_method::POST:
-		if (request.filename != spostresource)
+		if (req.filename != spostresource)
 		{
-			response.status_code = http_status::_404_NOT_FOUND_;
+			resp.status_code = http_status::_404_NOT_FOUND_;
 			break;
 		}
-		if (request.content_type != sctypepost)
+		if (req.content_type != sctypepost)
 		{
-			response.status_code = http_status::_415_UNSUPPORTED_MEDIA_TYPE_;
+			resp.status_code = http_status::_415_UNSUPPORTED_MEDIA_TYPE_;
 			break;
 		}
 
 		/* read query body from socket */
-		if (!recv_body(sockfd, request.content_length, qbody))
+		if (!recv_body(sockfd, req.content_length, qbody))
 		{
-			response.status_code = http_status::_500_INTERNAL_ERROR_;
+			resp.status_code = http_status::_500_INTERNAL_ERROR_;
 			break;
 		}
 
 		/* parse required parameters from body */
-		if (!response.parse_req_query_params(qbody))
+		if (!resp.parse_req_query_params(qbody))
 		{
-			response.status_code = http_status::_400_BAD_REQUEST_;
+			resp.status_code = http_status::_400_BAD_REQUEST_;
 			break;
 		}
-		std::cout << "sending query (name: " << response.request_qname << ", type: " << response.request_qtype << ")" << std::endl;
-		send_query(response.request_qname, response.request_qtype);
+		std::cout << "sending query (name: " << resp.request_qname << ", type: " << resp.request_qtype << ")" << std::endl;
+		send_query(resp.request_qname, resp.request_qtype);
 		break;
 	default:
-		response.status_code = http_status::_501_NOT_IMPLEMENTED_;
+		resp.status_code = http_status::_501_NOT_IMPLEMENTED_;
 		break;
 	}
 
-	response.username = username;
-	response.create_header();
+	resp.username = username;
+	resp.create_header();
 
-	return response;
+	return resp;
 }
 
-http_response http_response::receive(int sockfd, http_method reqmethod, std::string dirpath, std::string filename)
+http_response http_response::receive(const http_conf& conf, int sockfd, http_method reqmethod, std::string dirpath, std::string filename)
 {
-	http_response response;
+	http_response resp(conf);
 
 	std::string header;
 	if (!read_header(sockfd, delimiter, header))
-		return response;
+		return resp;
 
-	response.header = header;
+	resp.header = header;
 
 	/* parse header fields from the header */
-	response.parse_header();
+	resp.parse_header();
 
 	/* determine if message will continue after header */
-	bool payloadfollows = reqmethod == http_method::GET && response.status_code == http_status::_200_OK_;
+	bool payloadfollows = reqmethod == http_method::GET && resp.status_code == http_status::_200_OK_;
 
 	if (payloadfollows)
 	{
 		std::cout << "receiving payload..." << std::endl;
-		recv_text_file(sockfd, dirpath, filename, response.content_length); // read payload
+		recv_text_file(sockfd, dirpath, filename, resp.content_length); // read payload
 	}
 
-	return response;
+	return resp;
 }
 
 void http_response::print_header() const
@@ -541,5 +526,5 @@ bool http_response::parse_req_query_params(const std::string& querybody)
 	return false;
 }
 
-http_exception::http_exception() : std::runtime_error("http_exception")
+http_exception::http_exception(const std::string message) : std::runtime_error(message)
 { }
