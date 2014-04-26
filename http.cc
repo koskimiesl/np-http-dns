@@ -13,7 +13,7 @@
 #include "http.hh"
 #include "networking.hh"
 
-http_request::http_request(const http_conf& conf) : header(), method(http_method::NOT_SET_MET), filename(),
+http_request::http_request(const http_conf& conf) : header(), method(http_method::NOT_SET_MET), uri(),
 													protocol(http_protocol::NOT_SET_PROT), hostname(), username(),
 													content_type(), content_length(0), queryname(), querytype(), conf(conf)
 { }
@@ -28,27 +28,27 @@ http_request http_request::form_header(const http_conf& conf, std::string method
 	switch (req.method)
 	{
 	case http_method::GET:
-		req.filename = filename;
+		req.uri = filename;
 		break;
 	case http_method::PUT:
 		int filesize;
 		if (check_file_status(dirpath + filename, file_permissions::READ) != file_status::OK)
-			throw http_exception("failed to check file existence and access permissions");
+			throw general_exception("failed to check file existence and access permissions");
 		if ((filesize = check_file_size(dirpath + filename)) < 0)
-			throw http_exception("failed to get file size");
-		req.filename = filename;
+			throw general_exception("failed to get file size");
+		req.uri = filename;
 		req.content_type = req.conf.ctypegetput;
 		req.content_length = filesize;
 		break;
 	case http_method::POST:
-		req.filename = req.conf.uripost;
+		req.uri = req.conf.uripost;
 		req.content_type = req.conf.ctypepost;
 		req.queryname = queryname;
 		req.querytype = SQUERYTYPE;
 		req.content_length = strlen(req.get_query_body().c_str()) + 1; // includes terminating null character
 		break;
 	default:
-		throw http_exception("unsupported HTTP method");
+		throw general_exception("unsupported HTTP method");
 	}
 
 	req.hostname = hostname;
@@ -65,12 +65,13 @@ http_request http_request::receive_header(const http_conf& conf, int sockfd)
 	std::string header;
 
 	if (!read_header(sockfd, req.conf.delimiter, header))
-		return req;
+		throw general_exception("failed to read request header from socket");
 
 	req.header = header;
 
 	/* parse header fields from the header */
-	req.parse_header();
+	if (!req.parse_header())
+		throw general_exception("failed to parse request header");
 
 	return req;
 }
@@ -82,7 +83,7 @@ void http_request::print_header() const
 			  << "**********************" << std::endl << std::endl
 			  << "*** Request header values ***" << std::endl
 			  << "Method: " << conf.to_str(method) << std::endl
-			  << "Filename: " << filename << std::endl
+			  << "URI: " << uri << std::endl
 			  << "Protocol: " << conf.to_str(protocol) << std::endl
 			  << "Hostname: " << hostname << std::endl
 			  << "Username: " << username << std::endl
@@ -105,7 +106,7 @@ bool http_request::send(int sockfd, std::string dirpath) const
 	{
 		if (method == http_method::PUT)
 		{
-			if (!send_text_file(sockfd, dirpath, filename, content_length))
+			if (!send_text_file(sockfd, dirpath, uri, content_length))
 				return false;
 		}
 		else if (method == http_method::POST)
@@ -120,13 +121,13 @@ bool http_request::send(int sockfd, std::string dirpath) const
 void http_request::create_header()
 {
 	std::stringstream headerss;
-	headerss << conf.to_str(method) << " " << filename << " " << conf.to_str(protocol) << "\r\n";
-	headerss << "Host: " << hostname << "\r\n";
-	headerss << "Iam: " << username << "\r\n";
+	headerss << conf.to_str(method) << " " << uri << " " << conf.to_str(protocol) << "\r\n";
+	headerss << conf.to_str(http_hfield::HOST) << " " << hostname << "\r\n";
+	headerss << conf.to_str(http_hfield::IAM) << " " << username << "\r\n";
 	if (method == http_method::PUT || method == http_method::POST)
 	{
-		headerss << "Content-Type: " << content_type << "\r\n";
-		headerss << "Content-Length: " << content_length << "\r\n";
+		headerss << conf.to_str(http_hfield::CONTENT_TYPE) << " " << content_type << "\r\n";
+		headerss << conf.to_str(http_hfield::CONTENT_LEN) << " " << content_length << "\r\n";
 	}
 	headerss << "\r\n";
 	header = headerss.str();
@@ -157,9 +158,9 @@ bool http_request::parse_header()
 		if ((*it).length() > 0)
 		{
 			if ((*it).at(0) == '/')
-				filename = *it;
+				uri = *it;
 			else
-				filename = "/" + *it; // add slash in front of URI if it doesn't exist
+				uri = "/" + *it; // add slash in front of URI if it doesn't exist
 		}
 		else
 			return false;
@@ -211,7 +212,7 @@ bool http_request::parse_header()
 
 http_response::http_response(const http_conf& conf) : header(), protocol(http_protocol::NOT_SET_PROT), status(http_status::NOT_SET_ST), username(),
 													  content_type(), content_length(0), request_method(http_method::NOT_SET_MET),
-													  request_filename(), request_qname(), request_qtype(), conf(conf)
+													  request_uri(), request_qname(), request_qtype(), conf(conf)
 { }
 
 http_response http_response::proc_req_form_header(const http_conf& conf, int sockfd, http_request req, std::string servpath, std::string username)
@@ -219,8 +220,8 @@ http_response http_response::proc_req_form_header(const http_conf& conf, int soc
 	http_response resp(conf);
 	resp.protocol = resp.conf.protocol;
 	resp.request_method = req.method;
-	resp.request_filename = req.filename;
-	std::string filepath = servpath + req.filename;
+	resp.request_uri = req.uri;
+	std::string filepath = servpath + req.uri;
 
 	file_status getfilestatus, putfilestatus;
 	std::string qbody;
@@ -234,7 +235,7 @@ http_response http_response::proc_req_form_header(const http_conf& conf, int soc
 		{
 		case file_status::OK:
 			int filesize;
-			if ((filesize = check_file_size(servpath + req.filename)) < 0)
+			if ((filesize = check_file_size(servpath + req.uri)) < 0)
 				resp.status = http_status::INTERNAL_ERROR_500;
 			else
 			{
@@ -261,18 +262,18 @@ http_response http_response::proc_req_form_header(const http_conf& conf, int soc
 			resp.status = http_status::UNSUPPORTED_MEDIA_TYPE_415;
 			break;
 		}
-		putfilestatus = check_file_status(servpath + req.filename, file_permissions::WRITE);
+		putfilestatus = check_file_status(servpath + req.uri, file_permissions::WRITE);
 
 		switch (putfilestatus)
 		{
 		case file_status::DOES_NOT_EXIST:
-			if (recv_text_file(sockfd, servpath, req.filename, req.content_length))
+			if (recv_text_file(sockfd, servpath, req.uri, req.content_length))
 				resp.status = http_status::CREATED_201;
 			else
 				resp.status = http_status::INTERNAL_ERROR_500;
 			break;
 		case file_status::OK:
-			if (recv_text_file(sockfd, servpath, req.filename, req.content_length))
+			if (recv_text_file(sockfd, servpath, req.uri, req.content_length))
 				resp.status = http_status::OK_200;
 			else
 				resp.status = http_status::INTERNAL_ERROR_500;
@@ -287,7 +288,7 @@ http_response http_response::proc_req_form_header(const http_conf& conf, int soc
 
 		break;
 	case http_method::POST:
-		if (req.filename != resp.conf.uripost)
+		if (req.uri != resp.conf.uripost)
 		{
 			resp.status = http_status::NOT_FOUND_404;
 			break;
@@ -331,22 +332,33 @@ http_response http_response::receive(const http_conf& conf, int sockfd, http_met
 
 	std::string header;
 	if (!read_header(sockfd, resp.conf.delimiter, header))
-		return resp;
+		throw general_exception("failed to read response header from socket");
 
 	resp.header = header;
 
 	/* parse header fields from the header */
-	resp.parse_header();
+	if (!resp.parse_header())
+		throw general_exception("failed to parse response header");
 
 	/* determine if message will continue after header */
 	bool payloadfollows = reqmethod == http_method::GET && resp.status == http_status::OK_200;
 
 	if (payloadfollows)
 	{
-		std::cout << "receiving payload..." << std::endl;
+		std::cout << "receiving payload...";
 		recv_text_file(sockfd, dirpath, filename, resp.content_length); // read payload
 	}
 
+	return resp;
+}
+
+http_response http_response::form_404_header(const http_conf& conf, std::string username)
+{
+	http_response resp(conf);
+	resp.protocol = resp.conf.protocol;
+	resp.status = http_status::NOT_FOUND_404;
+	resp.username = username;
+	resp.create_header();
 	return resp;
 }
 
@@ -376,7 +388,8 @@ bool http_response::send(int sockfd, std::string servpath) const
 	/* send payload if needed */
 	if (payloadfollows)
 	{
-		if (!send_text_file(sockfd, servpath, request_filename, content_length))
+		std::cout << "sending payload...";
+		if (!send_text_file(sockfd, servpath, request_uri, content_length))
 			return false;
 	}
 	return true;
@@ -497,6 +510,3 @@ bool http_response::parse_req_query_params(const std::string& querybody)
 
 	return false;
 }
-
-http_exception::http_exception(const std::string message) : std::runtime_error(message)
-{ }

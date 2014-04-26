@@ -29,7 +29,7 @@ int accept_connection(int listenfd)
 	struct timeval tv;
 	tv.tv_sec = 5;
 	tv.tv_usec = 0;
-	if (setsockopt(connfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,sizeof(struct timeval)) < 0)
+	if (setsockopt(connfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(struct timeval)) < 0)
 	{
 		perror("setsockopt");
 		return -1;
@@ -95,10 +95,7 @@ bool read_header(int sockfd, std::string delimiter, std::string& header)
 	}
 	if (recvd < 0)
 	{
-		if (errno == EAGAIN || errno == EWOULDBLOCK)
-			std::cerr << "read: " << strerror(errno) << " (read from socket timed out)" << std::endl;
-		else
-			perror("read");
+		perror("read");
 		return false;
 	}
 	if (!delimiterfound)
@@ -123,7 +120,7 @@ bool recv_body(int sockfd, size_t contentlen, std::string& body)
 	}
 	if (recvd == 0)
 	{
-		std::cerr << "EOF" << std::endl;
+		std::cerr << "eof" << std::endl;
 		return false;
 	}
 	if (recvd < 0)
@@ -137,6 +134,7 @@ bool recv_body(int sockfd, size_t contentlen, std::string& body)
 
 bool recv_text_file(int sockfd, std::string dirpath, std::string filename, size_t filesize)
 {
+	std::cout << "receiving file of " << filesize << " bytes...";
 	std::ofstream fs(dirpath + filename);
 	if (!fs.good()) // check stream state
 	{
@@ -155,18 +153,18 @@ bool recv_text_file(int sockfd, std::string dirpath, std::string filename, size_
 	}
 	if (recvd < 0)
 	{
-		std::cerr << "recvd: " << recvd << " errno: " << errno << std::endl;
-		perror("recv_text_file: read");
+		perror("read");
 		fs.close();
 		return false;
 	}
 	if (recvd == 0)
 	{
-		std::cerr << "EOF" << std::endl;
+		std::cerr << "eof" << std::endl;
 		fs.close();
 		return false;
 	}
 	fs.close();
+	std::cout << recvdsofar << " bytes received" << std::endl;
 	return true;
 }
 
@@ -208,12 +206,15 @@ bool send_message(int sockfd, std::string message, bool uselength, size_t conten
 
 bool send_text_file(int sockfd, std::string servpath, std::string filename, size_t filesize)
 {
+	std::cout << "sending file of " << filesize << " bytes...";
 	std::ifstream fs(servpath + filename);
 	if (!fs.good()) // check stream state
 	{
 		std::cerr << "file stream error" << std::endl;
 		return false;
 	}
+
+	size_t totalsent = 0;
 
 	/* read file in chunks */
 	char readbuffer[READBUFSIZE];
@@ -231,7 +232,6 @@ bool send_text_file(int sockfd, std::string servpath, std::string filename, size
 			return false;
 		}
 		readremaining -= chunktoread;
-		std::cout << chunktoread << " bytes read from file, " << readremaining << " bytes remaining" << std::endl;
 
 		/* send read chunk to socket in chunks */
 		size_t sendremaining = chunktoread; // number of bytes remaining to send
@@ -250,7 +250,7 @@ bool send_text_file(int sockfd, std::string servpath, std::string filename, size
 			}
 			byteidx += sent;
 			sendremaining -= sent;
-			std::cout << sent << " bytes sent, " << sendremaining << " bytes remaining" << std::endl;
+			totalsent += sent;
 		}
 		if (sendremaining != 0)
 		{
@@ -259,7 +259,9 @@ bool send_text_file(int sockfd, std::string servpath, std::string filename, size
 			return false;
 		}
 	}
+
 	fs.close();
+	std::cout << totalsent << " bytes sent" << std::endl;
 	return true;
 }
 
@@ -278,7 +280,7 @@ void print_address(const char *prefix, const struct addrinfo *res)
 		address = &(sin6->sin6_addr);
 	else
 	{
-		std::cerr << "Unknown address" << std::endl;
+		std::cerr << "unknown address" << std::endl;
 		return;
 	}
 
@@ -299,8 +301,8 @@ int tcp_connect(std::string hostname, std::string port)
 
 	if ((addrret = getaddrinfo(hostname.c_str(), port.c_str(), &hints, &res)) != 0)
 	{
-		std::cerr << "Failed to get address info for " << hostname << ", "
-				<< port << ": " << gai_strerror(addrret) << std::endl;
+		std::cerr << "failed to get address info for " << hostname << ", "
+				  << port << ": " << gai_strerror(addrret) << std::endl;
 		return -1;
 	}
 	ressave = res;
@@ -310,25 +312,25 @@ int tcp_connect(std::string hostname, std::string port)
 		sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
 		if (sockfd < 0)
 		{
-			perror("Failed to create socket");
+			perror("failed to create socket");
 			continue; // ignore this one
 		}
 
-		print_address("Trying to connect", res);
+		print_address("trying to connect", res);
 		if (connect(sockfd, res->ai_addr, res->ai_addrlen) == 0)
 			break; // success
-		perror("Failed to connect");
+		perror("failed to connect");
 		close(sockfd);	// ignore this one
 	}
 	while ((res = res->ai_next) != NULL);
 
 	if (res == NULL)
 	{
-		std::cerr << "Failed to connect " << hostname << ", " << port << std::endl,
+		std::cerr << "failed to connect " << hostname << ", " << port << std::endl,
 		sockfd = -1;
 	}
 	else
-		print_address("Using address", res);
+		print_address("using address", res);
 
 	freeaddrinfo(ressave);
 

@@ -57,7 +57,7 @@ public:
 
 	std::string header; // whole header
 	http_method method;
-	std::string filename;
+	std::string uri;
 	http_protocol protocol;
 	std::string hostname;
 	std::string username;
@@ -110,6 +110,11 @@ public:
 	static http_response receive(const http_conf& conf, int sockfd, http_method reqmethod, std::string dirpath, std::string filename);
 
 	/*
+	 * Create general purpose error message (404 Not Found)
+	 */
+	static http_response form_404_header(const http_conf& conf, std::string username);
+
+	/*
 	 * Print whole header and parsed values
 	 */
 	void print_header() const;
@@ -130,7 +135,7 @@ public:
 	std::string content_type;
 	size_t content_length;
 	http_method request_method;
-	std::string request_filename;
+	std::string request_uri;
 	std::string request_qname;
 	std::string request_qtype;
 
@@ -149,13 +154,6 @@ private:
 	bool parse_req_query_params(const std::string& querybody);
 
 	const http_conf& conf; // reference to configuration
-};
-
-class http_exception : public std::runtime_error
-{
-public:
-
-  http_exception(const std::string message);
 };
 
 #endif

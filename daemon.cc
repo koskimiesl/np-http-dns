@@ -11,11 +11,11 @@
 
 #define	MAXFD 64
 
-int daemon_init(const char* progname, int facility)
+int daemon_init(const char* progname)
 {
 	pid_t pid;
 
-	// create child process, terminate parent
+	/* create child process, terminate parent */
 	if ((pid = fork()) < 0)
 	{
 		perror("fork");
@@ -24,17 +24,17 @@ int daemon_init(const char* progname, int facility)
 	else if (pid)
 		exit(0);
 
-	// become session and process group leader, detach from terminal
+	/* become session and process group leader, detach from terminal */
 	if (setsid() < 0)
 	{
 		perror("setsid");
 		return -1;
 	}
 
-	// ignore SIGHUP when session leader terminates
+	/* ignore SIGHUP when session leader terminates */
 	signal(SIGHUP, SIG_IGN);
 
-	// create child again, terminate parent (i.e. session leader)
+	/* create child again, terminate parent (i.e. session leader) */
 	if ((pid = fork()) < 0)
 	{
 		perror("fork");
@@ -43,21 +43,21 @@ int daemon_init(const char* progname, int facility)
 	else if (pid)
 		exit(0);
 
-	// change to safe working directory
+	/* change to safe working directory */
 	chdir("/");
 
-	// close inherited file descriptors (including standard streams)
+	/* close inherited file descriptors (including standard streams) */
 	int	i;
 	for (i = 0; i < MAXFD; i++)
 		close(i);
 
-	// redirect standard streams to black hole
+	/* redirect standard streams to black hole */
 	open("/dev/null", O_RDONLY); // stdin
 	open("/dev/null", O_RDWR); // stdout
 	open("/dev/null", O_RDWR); // stderr
 
-	// open connection to the system logger
-	openlog(progname, LOG_PID, facility);
+	/* open connection to the system logger */
+	openlog(progname, LOG_PID, LOG_WARNING);
 
 	return 0;
 }

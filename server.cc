@@ -1,6 +1,5 @@
 #include <iostream>
 #include <syslog.h>
-#include <sys/socket.h>
 #include <unistd.h>
 
 #include "daemon.hh"
@@ -25,7 +24,7 @@ int main(int argc, char *argv[])
 	if (!debug)
 	{
 		std::cout << "starting server as daemon..." << std::endl;
-		if (daemon_init("httpserver", LOG_WARNING) < 0)
+		if (daemon_init("httpserver") < 0)
 			return -1;
 		syslog(LOG_NOTICE, "started");
 		closelog();
@@ -69,36 +68,60 @@ int main(int argc, char *argv[])
 /* thread routine for processing client's request */
 void* process_request(void* parameters)
 {
-	process_req_params params = *(process_req_params*)parameters;
+	process_req_params* params = (process_req_params*)parameters;
 
 	/* HTTP configuration instance for thread */
 	const http_conf conf;
 
-	/* read request header from socket */
-	http_request request = http_request::receive_header(conf, params.connfd);
-	request.print_header();
-
-	/* process request and form response header */
-	http_response response = http_response::proc_req_form_header(conf, params.connfd, request, params.servpath, params.username);
-	response.print_header();
-
-	/* write response to socket */
-	if (!response.send(params.connfd, params.servpath))
-		params.errors = true;
-
-	/* to reduce "connection reset by peer" errors in the receiving end */
-	if (shutdown(params.connfd, SHUT_RDWR) < 0)
+	try
 	{
-		perror("shutdown");
-		params.errors = true;
+		/* read request header from socket */
+		http_request request = http_request::receive_header(conf, params->connfd);
+		request.print_header();
+
+		/* process request and form response header */
+		http_response response = http_response::proc_req_form_header(conf, params->connfd, request, params->servpath, params->username);
+		response.print_header();
+
+		/* write response to socket */
+		if (!response.send(params->connfd, params->servpath))
+		{
+			std::cerr << "failed to send response" << std::endl;
+			params->errors = true;
+		}
+	}
+	catch (const general_exception& e)
+	{
+		std::cerr << e.what() << std::endl;
+		params->errors = true;
 	}
 
-	if (close(params.connfd) < 0)
+	if (params->errors)
+	{
+		/* try to write 404 Not Found as a general error to socket */
+		http_response response = http_response::form_404_header(conf, params->username);
+		response.print_header();
+		if (!response.send(params->connfd, params->servpath))
+			std::cerr << "failed to send general error response" << std::endl;
+	}
+
+	/* to avoid "connection reset by peer" errors in the client */
+	char buf[100];
+	if (read(params->connfd, buf, 100) < 0)
+	{
+		perror("read");
+		params->errors = true;
+	}
+
+	/* now it's safe to close the socket */
+	if (close(params->connfd) < 0)
 	{
 		perror("close");
-		params.errors = true;
+		params->errors = true;
 	}
 
+	/* thread is now ready to be joined */
 	enter_queue(joinqueue);
-	return parameters;
+
+	return params;
 }
