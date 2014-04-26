@@ -37,22 +37,6 @@ struct dns_question
 	uint16_t qclass;
 };
 
-/*
-struct dns_qfields
-{
-	uint16_t qtype;
-	uint16_t qclass;
-};
-
-struct dns_question
-{
-	uint8_t* qname;
-	struct dns_qfields* qfields;
-};
-*/
-
-
-
 struct dns_rfields
 {
 	uint16_t rtype;
@@ -68,6 +52,6 @@ struct dns_res_record
 	unsigned char* rdata;
 };
 
-void send_query(std::string queryname, std::string querytype);
+void do_dns_query(std::string queryname, std::string querytype);
 
 #endif

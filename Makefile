@@ -47,7 +47,7 @@ threading.o: threading.cc
 server.o: daemon.hh general.hh http.hh networking.hh threading.hh
 client.o: general.hh http.hh networking.hh
 daemon.o: daemon.hh
-dns.o: dns.hh
+dns.o: dns.hh networking.hh
 general.o: general.hh
 http.o: dns.hh general.hh http.hh networking.hh
 httpconf.o: httpconf.hh

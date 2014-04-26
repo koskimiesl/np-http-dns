@@ -9,6 +9,7 @@
 #include <unistd.h>
 
 #include "dns.hh"
+#include "networking.hh"
 
 /*
  * convert hostname to DNS encoding
@@ -175,15 +176,41 @@ uint8_t* serialize_question(uint8_t* buffer, dns_question* source, size_t& msgle
 	return bufptr;
 }
 
-void send_query(std::string queryname, std::string querytype)
+void recv_response(int sockfd, struct sockaddr_in* dest)
 {
-	std::cout << "querytype: " << querytype << std::endl;
+	/* read fixed size header (12 bytes) from socket */
+	uint8_t headerbuf[12];
+	ssize_t remaining = 12;
+	size_t byteidx = 0;
+	ssize_t read;
+	socklen_t addrlen = sizeof(struct sockaddr_in);
+	while (remaining > 0 &&
+		  (read = recvfrom(sockfd, &headerbuf[byteidx], remaining, 0, (struct sockaddr*)dest, &addrlen)) > 0)
+	{
+		byteidx += read;
+		remaining -= read;
+		std::cout << read << " bytes read, " << remaining << " bytes remaining from header" << std::endl;
+	}
+	if (read < 0)
+	{
+		perror("recvfrom");
+		return;
+	}
+	if (remaining != 0)
+	{
+		std::cerr << "remaining is not zero" << std::endl;
+		return;
+	}
+	close(sockfd);
+}
+
+void do_dns_query(std::string queryname, std::string querytype)
+{
 	if (!querytype.compare(SQUERYTYPE)) // only type A currently supported
 	{
 		std::cerr << "unsupported DNS query type" << std::endl;
 		return;
 	}
-
 	if (queryname.length() > 200) // arbitrary maximum length
 	{
 		std::cerr << "too long query name" << std::endl;
@@ -204,25 +231,19 @@ void send_query(std::string queryname, std::string querytype)
 	init_query_question(&question, queryname);
 	bufptr = serialize_question(bufptr, &question, msglen);
 
+	int sockfd;
 	struct sockaddr_in dest;
-	memset(&dest, 0, sizeof(dest));
-	dest.sin_family = AF_INET;
-	dest.sin_port = htons(53);
-	dest.sin_addr.s_addr = inet_addr("8.8.8.8");
+	if ((sockfd = init_udp(&dest, "8.8.8.8", 53)) < 0)
+		return;
 
 	ssize_t sent;
-	int sockfd;
-	if ((sockfd = socket(AF_INET , SOCK_DGRAM , 0)) < 0)
-	{
-		perror("socket");
-		return;
-	}
-
-	std::cout << "using sockfd " << sockfd << std::endl;
 	if ((sent = sendto(sockfd, sendbuf, msglen, 0, (struct sockaddr*)&dest, sizeof(dest))) < 0)
 	{
-		perror("sendto failed");
+		perror("sendto");
+		close(sockfd);
+		return;
 	}
 	std::cout << sent << " bytes sent to udp socket" << std::endl;
-	close(sockfd);
+
+	recv_response(sockfd, &dest);
 }

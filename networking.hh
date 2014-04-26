@@ -16,6 +16,8 @@ int accept_connection(int listenfd);
  * return socket file descriptor */
 int create_and_listen(unsigned short port);
 
+int init_udp(struct sockaddr_in* destaddr, const char* destip, uint16_t destport);
+
 bool read_header(int sockfd, std::string delimiter, std::string& header);
 
 bool recv_body(int sockfd, size_t contentlen, std::string& body);

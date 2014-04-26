@@ -312,8 +312,9 @@ http_response http_response::proc_req_form_header(const http_conf& conf, int soc
 			resp.status = http_status::BAD_REQUEST_400;
 			break;
 		}
-		std::cout << "sending query (name: " << resp.request_qname << ", type: " << resp.request_qtype << ")" << std::endl;
-		send_query(resp.request_qname, resp.request_qtype);
+
+		std::cout << "doing DNS query with parameters: name: " << resp.request_qname << ", type: " << resp.request_qtype << std::endl;
+		do_dns_query(resp.request_qname, resp.request_qtype);
 		break;
 	default:
 		resp.status = http_status::NOT_IMPLEMENTED_501;

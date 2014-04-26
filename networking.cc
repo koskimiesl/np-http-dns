@@ -75,6 +75,22 @@ int create_and_listen(unsigned short port)
 	return listenfd;
 }
 
+int init_udp(struct sockaddr_in* destaddr, const char* destip, uint16_t destport)
+{
+	memset(destaddr, 0, sizeof(struct sockaddr_in));
+	destaddr->sin_family = AF_INET;
+	destaddr->sin_port = htons(destport);
+	destaddr->sin_addr.s_addr = inet_addr(destip);
+
+	int sockfd;
+	if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
+	{
+		perror("socket");
+		return -1;
+	}
+	return sockfd;
+}
+
 bool read_header(int sockfd, std::string delimiter, std::string& header)
 {
 	bool delimiterfound = false;
