@@ -70,9 +70,10 @@ void init_query_question(dns_question* question, std::string queryname)
 	question->qclass = 1; // class IN
 }
 
-/* Copies data from header structure to buffer to be sent over network
+/* Serializes data from header structure to buffer to be sent over network
  *
- * return: address in buffer to write next */
+ * return: address in buffer to write next
+ */
 uint8_t* serialize_header(uint8_t* buffer, dns_header* source, size_t& msglen)
 {
 	uint8_t* bufptr = buffer; // address to write next
@@ -147,7 +148,8 @@ uint8_t* serialize_header(uint8_t* buffer, dns_header* source, size_t& msglen)
 
 /* Copies data from question structure into buffer to be sent over network
  *
- * return: address in buffer to write next */
+ * return: address in buffer to write next
+ */
 uint8_t* serialize_question(uint8_t* buffer, dns_question* source, size_t& msglen)
 {
 	uint8_t* bufptr = buffer; // address to write next
@@ -176,6 +178,18 @@ uint8_t* serialize_question(uint8_t* buffer, dns_question* source, size_t& msgle
 	return bufptr;
 }
 
+/* index of first bit (LSB) is 1 */
+uint8_t get_bit(uint8_t byte, int bitidx)
+{
+	if (bitidx > 0 && bitidx <= 8)
+    {
+    	uint8_t bitmask = 1 << (bitidx - 1);
+    	return (byte & bitmask) ? 1 : 0;
+    }
+    else
+        return 0;
+}
+
 void recv_response(int sockfd, struct sockaddr_in* dest)
 {
 	/* read fixed size header (12 bytes) from socket */
@@ -201,6 +215,107 @@ void recv_response(int sockfd, struct sockaddr_in* dest)
 		std::cerr << "remaining is not zero" << std::endl;
 		return;
 	}
+	uint8_t* hbufptr = headerbuf; // buffer address to read next
+
+	/* construct header structure based on read data */
+	struct dns_header header;
+
+	/* convert id to host byte order, set to structure */
+	uint16_t idnbo;
+	memcpy(&idnbo, hbufptr, sizeof(uint16_t));
+	header.id = ntohs(idnbo);
+	std::cout << "read id: " << header.id << std::endl;
+	hbufptr += sizeof(uint16_t);
+
+
+	/* check byte from qr field to rd field, set bits to structure */
+
+	uint8_t qrtord = *hbufptr;
+
+	header.qr = get_bit(qrtord, 8);
+	std::cout << "read qr: " << (unsigned short)header.qr << std::endl;
+
+	uint8_t opcode = 0x00;
+	opcode += get_bit(qrtord, 7);
+	opcode <<= 1;
+	opcode += get_bit(qrtord, 6);
+	opcode <<= 1;
+	opcode += get_bit(qrtord, 5);
+	opcode <<= 1;
+	opcode += get_bit(qrtord, 4);
+	header.opcode = opcode;
+	std::cout << "read opcode: " << (unsigned short)header.opcode << std::endl;
+
+	header.aa = get_bit(qrtord, 3);
+	std::cout << "read aa: " << (unsigned short)header.aa << std::endl;
+
+	header.tc = get_bit(qrtord, 2);
+	std::cout << "read tc: " << (unsigned short)header.tc << std::endl;
+
+	header.rd = get_bit(qrtord, 1);
+	std::cout << "read rd: " << (unsigned short)header.rd << std::endl;
+
+	hbufptr += sizeof(uint8_t);
+
+
+	/* check byte from ra field to rcode field, set bits to structure */
+
+	uint8_t ratorcode = *hbufptr;
+
+	header.ra = get_bit(ratorcode, 8);
+	std::cout << "read ra: " << (unsigned short)header.ra << std::endl;
+
+	header.z = get_bit(ratorcode, 7);
+	std::cout << "read z: " << (unsigned short)header.z << std::endl;
+
+	header.ad = get_bit(ratorcode, 6);
+	std::cout << "read ad: " << (unsigned short)header.ad << std::endl;
+
+	header.cd = get_bit(ratorcode, 5);
+	std::cout << "read cd: " << (unsigned short)header.cd << std::endl;
+
+	uint8_t rcode = 0x00;
+	rcode += get_bit(ratorcode, 4);
+	rcode <<= 1;
+	rcode += get_bit(ratorcode, 3);
+	rcode <<= 1;
+	rcode += get_bit(ratorcode, 2);
+	rcode <<= 1;
+	rcode += get_bit(ratorcode, 1);
+	header.rcode = rcode;
+	std::cout << "read rcode: " << (unsigned short)header.rcode << std::endl;
+
+	hbufptr += sizeof(uint8_t);
+
+
+	/* convert qdcount to host byte order, set to structure */
+	uint16_t qdcountnbo;
+	memcpy(&qdcountnbo, hbufptr, sizeof(uint16_t));
+	header.qdcount = ntohs(qdcountnbo);
+	std::cout << "read qdcount: " << header.qdcount << std::endl;
+	hbufptr += sizeof(uint16_t);
+
+	/* convert ancount to host byte order, set to structure */
+	uint16_t ancountnbo;
+	memcpy(&ancountnbo, hbufptr, sizeof(uint16_t));
+	header.ancount = ntohs(ancountnbo);
+	std::cout << "read ancount: " << header.ancount << std::endl;
+	hbufptr += sizeof(uint16_t);
+
+	/* convert nscount to host byte order, set to structure */
+	uint16_t nscountnbo;
+	memcpy(&nscountnbo, hbufptr, sizeof(uint16_t));
+	header.nscount = ntohs(nscountnbo);
+	std::cout << "read nscount: " << header.nscount << std::endl;
+	hbufptr += sizeof(uint16_t);
+
+	/* convert arcount to host byte order, set to structure */
+	uint16_t arcountnbo;
+	memcpy(&arcountnbo, hbufptr, sizeof(uint16_t));
+	header.arcount = ntohs(arcountnbo);
+	std::cout << "read arcount: " << header.arcount << std::endl;
+	hbufptr += sizeof(uint16_t);
+
 	close(sockfd);
 }
 

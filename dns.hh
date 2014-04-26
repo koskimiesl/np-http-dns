@@ -12,17 +12,17 @@ struct dns_header
 {
 	uint16_t id; // message identifier (16 bits)
 
-	uint8_t qr : 1; // query or response (1 bit)
-	uint8_t opcode : 4; // type of query (4 bits)
-	uint8_t aa : 1; // authoritative answer (1 bit)
-	uint8_t tc : 1; // message truncated (1 bit)
-	uint8_t rd : 1; // recursion desired (1 bit)
+	uint8_t qr; // query or response (1 bit, idx 8)
+	uint8_t opcode; // type of query (4 bits, idx 4-7)
+	uint8_t aa; // authoritative answer (1 bit, idx 3)
+	uint8_t tc; // message truncated (1 bit, idx 2)
+	uint8_t rd; // recursion desired (1 bit, idx 1)
 
-	uint8_t ra : 1; // recursion available (1 bit)
-	uint8_t z : 1; // zero bit, ignored (1 bit)
-	uint8_t ad : 1; // authenticated data (1 bit)
-	uint8_t cd : 1; // checking disabled (1 bit)
-	uint8_t rcode : 4; // response code (4 bits)
+	uint8_t ra; // recursion available (1 bit, idx 8)
+	uint8_t z; // zero bit, ignored (1 bit, idx 7)
+	uint8_t ad; // authenticated data (1 bit, idx 6)
+	uint8_t cd; // checking disabled (1 bit, idx 5)
+	uint8_t rcode; // response code (4 bits, idx 1-4)
 
 	uint16_t qdcount; // number of question entries (16 bits)
 	uint16_t ancount; // number of answer entries (16 bits)
