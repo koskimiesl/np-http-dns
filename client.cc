@@ -40,6 +40,7 @@ int main(int argc, char *argv[])
 			/* read response from socket */
 			http_response resp = http_response::receive(conf, sockfd, req.method, dirpath, req.uri);
 			resp.print_header();
+			resp.print_payload();
 		}
 	}
 	catch (const general_exception& e)

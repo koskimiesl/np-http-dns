@@ -119,6 +119,8 @@ public:
 	 */
 	void print_header() const;
 
+	void print_payload() const;
+
 	/* Write HTTP response to socket
 	 * Caller must open and close the socket descriptor
 	 *
@@ -138,6 +140,7 @@ public:
 	std::string request_uri;
 	std::string request_qname;
 	std::string request_qtype;
+	std::string dns_query_resp; // response got from DNS query
 
 private:
 

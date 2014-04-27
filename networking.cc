@@ -124,6 +124,7 @@ bool read_header(int sockfd, std::string delimiter, std::string& header)
 
 bool recv_body(int sockfd, size_t contentlen, std::string& body)
 {
+	std::cout << "receiving body of " << contentlen << " bytes...";
 	size_t recvdsofar = 0;
 	int recvd;
 	char buffer[READBUFSIZE];
@@ -137,6 +138,7 @@ bool recv_body(int sockfd, size_t contentlen, std::string& body)
 	if (recvd == 0)
 	{
 		std::cerr << "eof" << std::endl;
+		std::cerr << "body received so far: " << bodyrecvd << std::endl;
 		return false;
 	}
 	if (recvd < 0)
@@ -145,6 +147,7 @@ bool recv_body(int sockfd, size_t contentlen, std::string& body)
 		return false;
 	}
 	body = bodyrecvd;
+	std::cout << recvdsofar << " bytes received" << std::endl;
 	return true;
 }
 

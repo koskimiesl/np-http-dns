@@ -212,7 +212,7 @@ bool http_request::parse_header()
 
 http_response::http_response(const http_conf& conf) : header(), protocol(http_protocol::NOT_SET_PROT), status(http_status::NOT_SET_ST), username(),
 													  content_type(), content_length(0), request_method(http_method::NOT_SET_MET),
-													  request_uri(), request_qname(), request_qtype(), conf(conf)
+													  request_uri(), request_qname(), request_qtype(), dns_query_resp(), conf(conf)
 { }
 
 http_response http_response::proc_req_form_header(const http_conf& conf, int sockfd, http_request req, std::string servpath, std::string username)
@@ -225,6 +225,7 @@ http_response http_response::proc_req_form_header(const http_conf& conf, int soc
 
 	file_status getfilestatus, putfilestatus;
 	std::string qbody;
+	dns_query_response dnsqresp;
 
 	switch (req.method)
 	{
@@ -314,7 +315,23 @@ http_response http_response::proc_req_form_header(const http_conf& conf, int soc
 		}
 
 		std::cout << "doing DNS query with parameters: name: " << resp.request_qname << ", type: " << resp.request_qtype << std::endl;
-		do_dns_query(resp.request_qname, resp.request_qtype);
+		dnsqresp = do_dns_query(resp.request_qname, resp.request_qtype);
+		switch (dnsqresp.status)
+		{
+		case dns_query_status::SUCCESS:
+			resp.dns_query_resp = dnsqresp.response;
+			resp.status = http_status::OK_200;
+			resp.content_type = resp.conf.ctypegetput;
+			resp.content_length = dnsqresp.resp_len;
+			break;
+		case dns_query_status::FAIL:
+			resp.status = http_status::NOT_FOUND_404; // 404 as a general error
+			break;
+		default:
+			resp.status = http_status::INTERNAL_ERROR_500;
+			break;
+		}
+
 		break;
 	default:
 		resp.status = http_status::NOT_IMPLEMENTED_501;
@@ -330,6 +347,7 @@ http_response http_response::proc_req_form_header(const http_conf& conf, int soc
 http_response http_response::receive(const http_conf& conf, int sockfd, http_method reqmethod, std::string dirpath, std::string filename)
 {
 	http_response resp(conf);
+	resp.request_method = reqmethod;
 
 	std::string header;
 	if (!read_header(sockfd, resp.conf.delimiter, header))
@@ -342,12 +360,22 @@ http_response http_response::receive(const http_conf& conf, int sockfd, http_met
 		throw general_exception("failed to parse response header");
 
 	/* determine if message will continue after header */
-	bool payloadfollows = reqmethod == http_method::GET && resp.status == http_status::OK_200;
+	bool payloadfollows = (resp.request_method == http_method::GET || resp.request_method == http_method::POST) &&
+						   resp.status == http_status::OK_200;
 
 	if (payloadfollows)
 	{
 		std::cout << "receiving payload...";
-		recv_text_file(sockfd, dirpath, filename, resp.content_length); // read payload
+		if (reqmethod == http_method::POST)
+		{
+			if (!recv_body(sockfd, resp.content_length, resp.dns_query_resp))
+				throw general_exception("failed to read body from socket");
+		}
+		else
+		{
+			if (!recv_text_file(sockfd, dirpath, filename, resp.content_length))
+				throw general_exception("failed to read payload as a file from socket");
+		}
 	}
 
 	return resp;
@@ -377,10 +405,19 @@ void http_response::print_header() const
 			  << "******************************" << std::endl << std::endl;
 }
 
+void http_response::print_payload() const
+{
+	if (request_method == http_method::POST && status == http_status::OK_200)
+		std::cout << "*** Response payload ***" << std::endl
+				  << dns_query_resp << std::endl
+				  << "************************" << std::endl;
+}
+
 bool http_response::send(int sockfd, std::string servpath) const
 {
 	/* determine if message will continue after header */
-	bool payloadfollows = request_method == http_method::GET && status == http_status::OK_200;
+	bool payloadfollows = (request_method == http_method::GET || request_method == http_method::POST) &&
+						   status == http_status::OK_200;
 
 	/* send header */
 	if (!send_message(sockfd, header, false, 0, payloadfollows))
@@ -390,7 +427,12 @@ bool http_response::send(int sockfd, std::string servpath) const
 	if (payloadfollows)
 	{
 		std::cout << "sending payload...";
-		if (!send_text_file(sockfd, servpath, request_uri, content_length))
+		if (request_method == http_method::POST)
+		{
+			if (!send_message(sockfd, dns_query_resp, true, content_length, false))
+				return false;
+		}
+		else if (!send_text_file(sockfd, servpath, request_uri, content_length))
 			return false;
 	}
 	return true;
@@ -401,7 +443,8 @@ void http_response::create_header()
 	std::stringstream headerss;
 	headerss << conf.to_str(protocol) << " " << conf.to_str(status) << "\r\n";
 	headerss << conf.to_str(http_hfield::IAM) << " " << username << "\r\n";
-	if (request_method == http_method::GET && status == http_status::OK_200)
+	if ((request_method == http_method::GET || request_method == http_method::POST) &&
+		 status == http_status::OK_200)
 	{
 		headerss << conf.to_str(http_hfield::CONTENT_TYPE) << " " << content_type << "\r\n";
 		headerss << conf.to_str(http_hfield::CONTENT_LEN) << " " << content_length << "\r\n";
