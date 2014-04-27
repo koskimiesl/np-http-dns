@@ -16,8 +16,8 @@ typedef enum
 struct dns_query_response
 {
 	dns_query_status status;
-	std::string response;
-	size_t resp_len;
+	std::string response; // contains necessary data from answer resource records
+	size_t resp_len; // response length in bytes
 };
 
 dns_query_response do_dns_query(std::string queryname, std::string querytype);

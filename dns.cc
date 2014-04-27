@@ -47,17 +47,17 @@ struct dns_question
 
 struct dns_res_record
 {
-	char* rname;
+	std::string rname;
 	uint16_t rtype;
 	uint16_t rclass;
 	uint32_t rttl;
 	uint16_t rdlength;
-	std::string rdata; // IPv4 address in dot separated format
+	std::string rdata; // only IPv4 address supported
 };
 
 /* function prototypes */
-void send_query(int sockfd, struct sockaddr_in* dest, std::string queryname);
-void recv_response(int sockfd, struct sockaddr_in* dest);
+bool send_query(int sockfd, sockaddr_in* dest, std::string queryname);
+bool recv_response(int sockfd, sockaddr_in* dest, std::string& formedresp);
 void init_query_header(dns_header* header);
 void init_query_question(dns_question* question, std::string queryname);
 uint8_t* serialize_header(uint8_t* buffer, dns_header* source, size_t& msglen);
@@ -65,6 +65,10 @@ uint8_t* serialize_question(uint8_t* buffer, dns_question* source, size_t& msgle
 uint8_t* deserialize_header(uint8_t* headerstart, dns_header* header);
 uint8_t* deserialize_question(uint8_t* msgstart, uint8_t* quesstart, dns_question* question);
 uint8_t* deserialize_res_rec(uint8_t* msgstart, uint8_t* rrstart, dns_res_record* resrec);
+std::string form_response(const std::vector<dns_res_record>& answers);
+std::string remove_last_dot(std::string str);
+std::string addr_type_to_str(uint16_t addrtype);
+std::string addr_class_to_str(uint16_t addrclass);
 void to_dns_name_enc(char* dnsformat, char* hostformat);
 uint8_t* process_name(uint8_t *bstart, uint8_t *bcur, char *name);
 uint8_t get_bit(uint8_t byte, int bitidx);
@@ -94,17 +98,30 @@ dns_query_response do_dns_query(std::string queryname, std::string querytype)
 		return resp;
 	}
 
-	send_query(sockfd, &dest, queryname);
+	if (!send_query(sockfd, &dest, queryname))
+	{
+		if (close(sockfd) < 0) perror("close");
+		resp.status = dns_query_status::FAIL;
+		return resp;
+	}
 
-	recv_response(sockfd, &dest);
+	std::string formedresp; // string to be returned as a response
+	if (!recv_response(sockfd, &dest, formedresp))
+	{
+		if (close(sockfd) < 0) perror("close");
+		resp.status = dns_query_status::FAIL;
+		return resp;
+	}
+
+	if (close(sockfd) < 0) perror("close");
 
 	resp.status = dns_query_status::SUCCESS;
-	resp.response = "juustoa";
+	resp.response = formedresp;
 	resp.resp_len = strlen(resp.response.c_str()) + 1; // include terminating null character
 	return resp;
 }
 
-void send_query(int sockfd, struct sockaddr_in* dest, std::string queryname)
+bool send_query(int sockfd, sockaddr_in* dest, std::string queryname)
 {
 	uint8_t msg[UDPBUFSIZE];
 	uint8_t* msgcur = msg; // address to write next
@@ -121,34 +138,31 @@ void send_query(int sockfd, struct sockaddr_in* dest, std::string queryname)
 	msgcur = serialize_question(msgcur, &question, msglen);
 
 	ssize_t sent;
-	if ((sent = sendto(sockfd, msg, msglen, 0, (struct sockaddr*)dest, sizeof(struct sockaddr_in))) < 0)
+	if ((sent = sendto(sockfd, msg, msglen, 0, (sockaddr*)dest, sizeof(sockaddr_in))) < 0)
 	{
 		perror("sendto");
-		if (close(sockfd) < 0)
-			perror("close");
-		return;
+		return false;
 	}
-	std::cout << sent << " bytes sent to udp socket" << std::endl;
+	std::cout << "UDP message of " << sent << " bytes sent" << std::endl;
+	return true;
 }
 
-void recv_response(int sockfd, struct sockaddr_in* dest)
+bool recv_response(int sockfd, sockaddr_in* dest, std::string& formedresp)
 {
 	uint8_t udpmsg[UDPBUFSIZE];
 	ssize_t recvd;
-	socklen_t addrlen = sizeof(struct sockaddr_in);
-	if ((recvd = recvfrom(sockfd, udpmsg, UDPBUFSIZE, 0, (struct sockaddr*)dest, &addrlen)) < 0)
+	socklen_t addrlen = sizeof(sockaddr_in);
+	if ((recvd = recvfrom(sockfd, udpmsg, UDPBUFSIZE, 0, (sockaddr*)dest, &addrlen)) < 0)
 	{
 		perror("recvfrom");
-		return;
+		return false;
 	}
 	if (recvd == 0)
 	{
 		std::cerr << "no data received" << std::endl;
-		return;
+		return false;
 	}
 	std::cout << "UDP message of " << recvd << " bytes received" << std::endl;
-	if (close(sockfd) < 0)
-		perror("close");
 
 	uint8_t* msgcur = udpmsg; // byte to read next from message
 
@@ -157,24 +171,30 @@ void recv_response(int sockfd, struct sockaddr_in* dest)
 	msgcur = deserialize_header(msgcur, &header);
 
 	/* construct question structures based on received data */
-	std::vector<struct dns_question> questions;
+	std::vector<dns_question> questions;
 	uint16_t qi;
 	for (qi = 0; qi < header.qdcount; qi++)
 	{
-		struct dns_question question;
+		dns_question question;
 		msgcur = deserialize_question(udpmsg, msgcur, &question);
 		questions.push_back(question);
 	}
 
 	/* construct resource record structures for answers based on received data */
-	std::vector<struct dns_res_record> answerresrecs;
+	std::vector<dns_res_record> answerresrecs;
 	uint16_t ai;
 	for (ai = 0; ai < header.ancount; ai++)
 	{
-		struct dns_res_record answerresrec;
-		msgcur = deserialize_res_rec(udpmsg, msgcur, &answerresrec);
+		dns_res_record answerresrec;
+		if ((msgcur = deserialize_res_rec(udpmsg, msgcur, &answerresrec)) == NULL)
+			return false;
 		answerresrecs.push_back(answerresrec);
 	}
+
+	/* form response string from answers */
+	formedresp = form_response(answerresrecs);
+
+	return true;
 }
 
 void init_query_header(dns_header* header)
@@ -484,9 +504,63 @@ uint8_t* deserialize_res_rec(uint8_t* msgstart, uint8_t* rrstart, dns_res_record
 		msgcur += 4;
 	}
 	else
+	{
 		std::cerr << "unsupported combination of resource type, class and data length" << std::endl;
+		return NULL;
+	}
 
 	return msgcur;
+}
+
+std::string form_response(const std::vector<dns_res_record>& answers)
+{
+	std::stringstream ss;
+	ss << "DNS answers:" << std::endl << std::endl;
+
+	std::vector<dns_res_record>::const_iterator it;
+	for (it = answers.begin(); it != answers.end(); it++)
+	{
+		ss << "Answer:" << std::endl;
+		ss << "Name: " << remove_last_dot(it->rname) << std::endl;
+		ss << "Type: " << addr_type_to_str(it->rtype) << std::endl;
+		ss << "Class: " << addr_class_to_str(it->rclass) << std::endl;
+		ss << "Data: " << it->rdata << std::endl << std::endl;
+	}
+
+	return ss.str();
+}
+
+std::string remove_last_dot(std::string str)
+{
+	if (str.length() > 0)
+	{
+		std::string::iterator it = str.end() - 1;
+		if (*it == '.')
+			str.erase(it);
+	}
+	return str;
+}
+
+std::string addr_type_to_str(uint16_t addrtype)
+{
+	switch (addrtype)
+	{
+	case 1:
+		return "A";
+	default:
+		return "UNSUPPORTED";
+	}
+}
+
+std::string addr_class_to_str(uint16_t addrclass)
+{
+	switch (addrclass)
+	{
+	case 1:
+		return "IN";
+	default:
+		return "UNSUPPORTED";
+	}
 }
 
 /*
