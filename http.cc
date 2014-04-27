@@ -315,7 +315,7 @@ http_response http_response::proc_req_form_header(const http_conf& conf, int soc
 		}
 
 		std::cout << "doing DNS query with parameters: name: " << resp.request_qname << ", type: " << resp.request_qtype << std::endl;
-		dnsqresp = do_dns_query(resp.request_qname, resp.request_qtype);
+		dnsqresp = do_dns_query(resp.conf.dnsservip, resp.request_qname, resp.request_qtype);
 		switch (dnsqresp.status)
 		{
 		case dns_query_status::SUCCESS:

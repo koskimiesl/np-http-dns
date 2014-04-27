@@ -19,8 +19,9 @@ struct thread_queue
 struct process_req_params
 {
 	int connfd;
-	std::string username;
 	std::string servpath;
+	std::string dnsservip;
+	std::string username;
 	bool errors; // true if errors occured in thread routine
 };
 

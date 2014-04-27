@@ -26,7 +26,7 @@ int main(int argc, char *argv[])
 
 	try
 	{
-		const http_conf conf;
+		const http_conf conf("");
 
 		/* create request header based on command line parameters */
 		http_request req = http_request::form_header(conf, method, dirpath, filename, hostname, username, queryname);

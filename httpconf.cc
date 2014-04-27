@@ -1,8 +1,8 @@
 #include "httpconf.hh"
 
-http_conf::http_conf() : protocol(http_protocol::HTTP_1_1), ctypegetput("text/plain"),
-						 ctypepost("application/x-www-form-urlencoded"), uripost("/dns-query"),
-						 delimiter("\r\n\r\n")
+http_conf::http_conf(const std::string dnsservip) : protocol(http_protocol::HTTP_1_1), ctypegetput("text/plain"),
+						 	 	 	 	 	  	  	ctypepost("application/x-www-form-urlencoded"), uripost("/dns-query"),
+						 	 	 	 	 	  	  	delimiter("\r\n\r\n"), dnsservip(dnsservip)
 {
 	init_maps();
 }

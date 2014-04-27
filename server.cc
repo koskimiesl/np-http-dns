@@ -17,8 +17,9 @@ int main(int argc, char *argv[])
 	unsigned short port;
 	bool debug = false; // becomes a daemon by default
 	std::string servpath; // path to serving directory
+	std::string dnsservip; // DNS server to use
 	std::string username;
-	if (get_server_opts(argc, argv, port, debug, servpath, username) < 0)
+	if (get_server_opts(argc, argv, port, debug, servpath, dnsservip, username) < 0)
 		return -1;
 
 	if (!debug)
@@ -55,8 +56,9 @@ int main(int argc, char *argv[])
 		/* init thread parameters */
 		process_req_params* parameters = new process_req_params;
 		parameters->connfd = connfd;
-		parameters->username = username;
 		parameters->servpath = servpath;
+		parameters->dnsservip = dnsservip;
+		parameters->username = username;
 		parameters->errors = false;
 
 		/* start new thread to process client's request */
@@ -71,7 +73,7 @@ void* process_request(void* parameters)
 	process_req_params* params = (process_req_params*)parameters;
 
 	/* HTTP configuration instance for thread */
-	const http_conf conf;
+	const http_conf conf(params->dnsservip);
 
 	try
 	{

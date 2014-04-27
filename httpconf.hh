@@ -4,6 +4,7 @@
 #define NETPROG_HTTPCONF_HH
 
 #include <map>
+#include <string>
 
 /* supported protocol (version) */
 typedef enum
@@ -56,7 +57,7 @@ public:
 	/*
 	 * Constructor
 	 */
-	http_conf();
+	http_conf(const std::string dnsservip);
 
 	http_protocol to_prot(std::string str) const;
 	std::string to_str(http_protocol prot) const;
@@ -75,6 +76,7 @@ public:
 	const std::string ctypepost; // supported content type for POST
 	const std::string uripost; // supported URI for POST
 	const std::string delimiter; // delimiter between header and payload
+	const std::string dnsservip; // DNS server to use (IPv4 address)
 
 private:
 

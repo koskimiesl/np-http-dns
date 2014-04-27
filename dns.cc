@@ -52,7 +52,7 @@ struct dns_res_record
 	uint16_t rclass;
 	uint32_t rttl;
 	uint16_t rdlength;
-	std::string rdata; // only IPv4 address supported
+	std::vector<uint8_t> rdata; // only IPv4 address supported
 };
 
 /* function prototypes */
@@ -69,11 +69,12 @@ std::string form_response(const std::vector<dns_res_record>& answers);
 std::string remove_last_dot(std::string str);
 std::string addr_type_to_str(uint16_t addrtype);
 std::string addr_class_to_str(uint16_t addrclass);
+std::string ipv4_addr_to_str(std::vector<uint8_t> addrdata);
 void to_dns_name_enc(char* dnsformat, char* hostformat);
 uint8_t* process_name(uint8_t *bstart, uint8_t *bcur, char *name);
 uint8_t get_bit(uint8_t byte, int bitidx);
 
-dns_query_response do_dns_query(std::string queryname, std::string querytype)
+dns_query_response do_dns_query(std::string dnsservip, std::string queryname, std::string querytype)
 {
 	dns_query_response resp;
 
@@ -92,7 +93,7 @@ dns_query_response do_dns_query(std::string queryname, std::string querytype)
 
 	int sockfd;
 	struct sockaddr_in dest;
-	if ((sockfd = init_udp(&dest, "8.8.8.8", DNSPORT)) < 0)
+	if ((sockfd = init_udp(&dest, dnsservip.c_str(), DNSPORT)) < 0)
 	{
 		resp.status = dns_query_status::FAIL;
 		return resp;
@@ -496,11 +497,12 @@ uint8_t* deserialize_res_rec(uint8_t* msgstart, uint8_t* rrstart, dns_res_record
 	/* process data */
 	if (resrec->rtype == 1 && resrec->rclass == 1 && resrec->rdlength == 4)
 	{
-		std::stringstream ss;
-		ss << (unsigned short)msgcur[0] << "." << (unsigned short)msgcur[1] << "."
-		   << (unsigned short)msgcur[2] << "." << (unsigned short)msgcur[3];
-		resrec->rdata = ss.str();
-		std::cout << "got rdata: " << resrec->rdata << std::endl;
+		std::vector<uint8_t> rdata;
+		int i;
+		for (i = 0; i < 4; i++)
+			rdata.push_back(msgcur[i]);
+		resrec->rdata = rdata;
+		std::cout << "got rdata: " << ipv4_addr_to_str(resrec->rdata) << std::endl;
 		msgcur += 4;
 	}
 	else
@@ -520,13 +522,22 @@ std::string form_response(const std::vector<dns_res_record>& answers)
 	std::vector<dns_res_record>::const_iterator it;
 	for (it = answers.begin(); it != answers.end(); it++)
 	{
-		ss << "Answer:" << std::endl;
-		ss << "Name: " << remove_last_dot(it->rname) << std::endl;
-		ss << "Type: " << addr_type_to_str(it->rtype) << std::endl;
-		ss << "Class: " << addr_class_to_str(it->rclass) << std::endl;
-		ss << "Data: " << it->rdata << std::endl << std::endl;
+		ss << "Answer:" << std::endl
+		   << "Name: " << remove_last_dot(it->rname) << std::endl
+		   << "Type: " << addr_type_to_str(it->rtype) << std::endl
+		   << "Class: " << addr_class_to_str(it->rclass) << std::endl
+		   << "TTL: " << it->rttl << " seconds" << std::endl
+		   << "Data: " << ipv4_addr_to_str(it->rdata) << std::endl << std::endl;
 	}
 
+	return ss.str();
+}
+
+std::string ipv4_addr_to_str(std::vector<uint8_t> addrdata)
+{
+	std::stringstream ss;
+	ss << (unsigned short)addrdata[0] << "." << (unsigned short)addrdata[1] << "."
+	   << (unsigned short)addrdata[2] << "." << (unsigned short)addrdata[3];
 	return ss.str();
 }
 
@@ -535,7 +546,7 @@ std::string remove_last_dot(std::string str)
 	if (str.length() > 0)
 	{
 		std::string::iterator it = str.end() - 1;
-		if (*it == '.')
+		if (*it == '.') // remove last dot
 			str.erase(it);
 	}
 	return str;

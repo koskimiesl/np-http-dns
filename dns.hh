@@ -20,6 +20,6 @@ struct dns_query_response
 	size_t resp_len; // response length in bytes
 };
 
-dns_query_response do_dns_query(std::string queryname, std::string querytype);
+dns_query_response do_dns_query(std::string dnsservip, std::string queryname, std::string querytype);
 
 #endif

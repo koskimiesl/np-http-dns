@@ -164,14 +164,15 @@ int get_client_opts(int argc, char** argv, std::string& hostname, std::string& p
 }
 
 int get_server_opts(int argc, char** argv, unsigned short& port, bool& debug,
-					std::string& servpath, std::string& username)
+					std::string& servpath, std::string& dnsservip, std::string& username)
 {
 	bool portgiven = false;
 	bool servpathgiven = false;
+	bool dnsservipgiven = false;
 	bool usernamegiven = false;
 	unsigned long candidate;
 	char opt;
-	while ((opt = getopt(argc, argv, "p:ds:u:")) != -1)
+	while ((opt = getopt(argc, argv, "p:ds:q:u:")) != -1)
 	{
 		switch (opt)
 		{
@@ -197,6 +198,10 @@ int get_server_opts(int argc, char** argv, unsigned short& port, bool& debug,
 			servpath = std::string(optarg);
 			servpathgiven = true;
 			break;
+		case 'q':
+			dnsservip = std::string(optarg);
+			dnsservipgiven = true;
+			break;
 		case 'u':
 			username = std::string(optarg);
 			usernamegiven = true;
@@ -207,9 +212,9 @@ int get_server_opts(int argc, char** argv, unsigned short& port, bool& debug,
 			break;
 		}
 	}
-	if (!portgiven || !servpathgiven || !usernamegiven)
+	if (!portgiven || !servpathgiven || !dnsservipgiven || !usernamegiven)
 	{
-		std::cerr << "usage: ./httpserver -p port [-d] -s servpath -u username" << std::endl;
+		std::cerr << "usage: ./httpserver -p port [-d] -s servpath -q dnsservip -u username" << std::endl;
 		return -1;
 	}
 	return 0;

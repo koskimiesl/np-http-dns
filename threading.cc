@@ -25,8 +25,9 @@ void* cleaner(void* queue)
 			process_req_params* parameters = (process_req_params*)result;
 			std::cout << "cleaner: thread with ID " << tqueue->queue.front() << " terminated (with parameters: "
 					  << "connfd: " << parameters->connfd
-					  << ", username: " << parameters->username
 					  << ", servpath: " << parameters->servpath
+					  << ", dnsservip: " << parameters->dnsservip
+					  << ", username: " << parameters->username
 					  << ", errors: ";
 			if (!parameters->errors)
 				std::cout << "no";
@@ -55,8 +56,9 @@ void* cleaner(void* queue)
 				process_req_params* parameters = (process_req_params*)result;
 				std::cout << "cleaner: thread with ID " << tqueue->queue.front() << " terminated (parameters: "
 						  << "connfd: " << parameters->connfd
-						  << ", username: " << parameters->username
 						  << ", servpath: " << parameters->servpath
+						  << ", dnsservip: " << parameters->dnsservip
+						  << ", username: " << parameters->username
 						  << ", errors: ";
 				if (!parameters->errors)
 					std::cout << "no";
