@@ -91,6 +91,9 @@ int start_thread(void* (*routine)(void*), void* arg, std::string name)
 	return 0;
 }
 
+/*
+ * Handle join of request processing thread
+ */
 bool handle_join(thread_queue* tqueue)
 {
 	void* result;

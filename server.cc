@@ -12,6 +12,9 @@ thread_queue joinqueue; // request processing threads ready to be joined
 
 void* process_request(void* parameters);
 
+/*
+ * Main function
+ */
 int main(int argc, char *argv[])
 {
 	unsigned short port;
@@ -67,7 +70,11 @@ int main(int argc, char *argv[])
 	}
 }
 
-/* thread routine for processing client's request */
+/*
+ * Thread routine for processing client's request
+ *
+ * parameters: request processing parameters
+ */
 void* process_request(void* parameters)
 {
 	process_req_params* params = (process_req_params*)parameters;

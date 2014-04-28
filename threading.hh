@@ -25,13 +25,35 @@ struct process_req_params
 	bool errors; // true if errors occured in thread routine
 };
 
-/* thread routine for cleaning completed request processing threads */
+/*
+ * Thread routine for cleaning completed request processing threads
+ *
+ * queue: join queue
+ */
 void* cleaner(void* queue);
 
+/*
+ * Create join queue
+ *
+ * return: queue structure
+ */
 thread_queue create_queue();
 
+/*
+ * Enter self into queue
+ *
+ * queue: queue to enter
+ */
 void enter_queue(thread_queue& queue);
 
+/*
+ * Start a thread
+ *
+ * routine: thread routine to run
+ * arg: thread routine arguments
+ * name: thread name
+ * return: 0 on success, -1 on failure
+ */
 int start_thread(void* (*routine)(void*), void* arg, std::string name);
 
 #endif

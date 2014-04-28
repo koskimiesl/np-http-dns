@@ -1,7 +1,3 @@
-/*
- * Simple HTTP client supporting GET, PUT and POST with plain text payload
- */
-
 #include <iostream>
 #include <unistd.h>
 

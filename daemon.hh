@@ -2,7 +2,8 @@
 #ifndef NETPROG_DAEMON_HH
 #define NETPROG_DAEMON_HH
 
-/* Starts a daemon process originating from current process
+/*
+ * Start a daemon process originating from current process
  *
  * progname: program identification used in system logger
  * return: 0 if daemonization succeeded, -1 on error

@@ -16,6 +16,7 @@
 #define UDPBUFSIZE 2048 // maximum datagram size sent and received
 #define DNSPORT "53" // well-known DNS port number
 
+/* DNS header */
 struct dns_header
 {
 	uint16_t id; // message identifier (16 bits)
@@ -38,6 +39,7 @@ struct dns_header
 	uint16_t arcount; // number of additional entries (16 bits)
 };
 
+/* DNS message question */
 struct dns_question
 {
 	char* qname;
@@ -45,6 +47,7 @@ struct dns_question
 	uint16_t qclass;
 };
 
+/* DNS message resource record */
 struct dns_res_record
 {
 	std::string rname;
@@ -55,7 +58,6 @@ struct dns_res_record
 	std::vector<uint8_t> rdata; // only IPv4 address supported
 };
 
-/* function prototypes */
 bool send_query(int sockfd, struct sockaddr* destaddr, socklen_t addrlen, std::string queryname);
 bool recv_response(int sockfd, std::string& formedresp);
 void init_query_header(dns_header* header);
@@ -124,6 +126,9 @@ dns_query_response do_dns_query(std::string dnsservip, std::string queryname, st
 	return resp;
 }
 
+/*
+ * Send DNS query
+ */
 bool send_query(int sockfd, struct sockaddr* destaddr, socklen_t addrlen, std::string queryname)
 {
 	uint8_t msg[UDPBUFSIZE];
@@ -150,6 +155,9 @@ bool send_query(int sockfd, struct sockaddr* destaddr, socklen_t addrlen, std::s
 	return true;
 }
 
+/*
+ * Receive DNS response
+ */
 bool recv_response(int sockfd, std::string& formedresp)
 {
 	uint8_t udpmsg[UDPBUFSIZE];
@@ -204,6 +212,9 @@ bool recv_response(int sockfd, std::string& formedresp)
 	return true;
 }
 
+/*
+ * Initialize values into query header structure
+ */
 void init_query_header(dns_header* header)
 {
 	srand(time(NULL));
@@ -228,6 +239,9 @@ void init_query_header(dns_header* header)
 	header->arcount = 0;
 }
 
+/*
+ * Initialize values to query question structure
+ */
 void init_query_question(dns_question* question, std::string queryname)
 {
 	char host[300];
@@ -239,9 +253,8 @@ void init_query_question(dns_question* question, std::string queryname)
 	question->qclass = 1; // class IN
 }
 
-/* Serializes data from header structure to buffer to be sent over network
- *
- * return: address in buffer to write next
+/*
+ * Serialize data from header structure to buffer to be sent over network
  */
 uint8_t* serialize_header(uint8_t* buffer, dns_header* source, size_t& msglen)
 {
@@ -309,9 +322,8 @@ uint8_t* serialize_header(uint8_t* buffer, dns_header* source, size_t& msglen)
 	return bufptr;
 }
 
-/* Copies data from question structure into buffer to be sent over network
- *
- * return: address in buffer to write next
+/*
+ * Serialize data from question structure into buffer to be sent over network
  */
 uint8_t* serialize_question(uint8_t* buffer, dns_question* source, size_t& msglen)
 {
@@ -341,6 +353,9 @@ uint8_t* serialize_question(uint8_t* buffer, dns_question* source, size_t& msgle
 	return bufptr;
 }
 
+/*
+ * Deserialize data from buffer into header structure
+ */
 uint8_t* deserialize_header(uint8_t* headerstart, dns_header* header)
 {
 	std::cout << std::endl << "deserializing DNS header:" << std::endl;
@@ -429,6 +444,9 @@ uint8_t* deserialize_header(uint8_t* headerstart, dns_header* header)
 	return msgcur;
 }
 
+/*
+ * Deserialize data from buffer into question structure
+ */
 uint8_t* deserialize_question(uint8_t* msgstart, uint8_t* quesstart, dns_question* question)
 {
 	std::cout << std::endl << "deserializing DNS question:" << std::endl;
@@ -457,6 +475,9 @@ uint8_t* deserialize_question(uint8_t* msgstart, uint8_t* quesstart, dns_questio
 	return msgcur;
 }
 
+/*
+ * Deserialize data from buffer into resource record structure
+ */
 uint8_t* deserialize_res_rec(uint8_t* msgstart, uint8_t* rrstart, dns_res_record* resrec, bool& supported)
 {
 	std::cout << std::endl << "deserializing DNS resource record:" << std::endl;
@@ -518,6 +539,9 @@ uint8_t* deserialize_res_rec(uint8_t* msgstart, uint8_t* rrstart, dns_res_record
 	return msgcur;
 }
 
+/*
+ * Form DNS response string to be returned
+ */
 std::string form_response(const std::vector<dns_res_record>& answers)
 {
 	std::stringstream ss;
@@ -537,6 +561,9 @@ std::string form_response(const std::vector<dns_res_record>& answers)
 	return ss.str();
 }
 
+/*
+ * Convert data to IPv4 address string
+ */
 std::string ipv4_addr_to_str(std::vector<uint8_t> addrdata)
 {
 	std::stringstream ss;
@@ -545,6 +572,9 @@ std::string ipv4_addr_to_str(std::vector<uint8_t> addrdata)
 	return ss.str();
 }
 
+/*
+ * Remove last dot from a string
+ */
 std::string remove_last_dot(std::string str)
 {
 	if (str.length() > 0)
@@ -556,6 +586,9 @@ std::string remove_last_dot(std::string str)
 	return str;
 }
 
+/*
+ * Convert type to string
+ */
 std::string addr_type_to_str(uint16_t addrtype)
 {
 	switch (addrtype)
@@ -567,6 +600,9 @@ std::string addr_type_to_str(uint16_t addrtype)
 	}
 }
 
+/*
+ * Convert class to string
+ */
 std::string addr_class_to_str(uint16_t addrclass)
 {
 	switch (addrclass)
@@ -579,38 +615,30 @@ std::string addr_class_to_str(uint16_t addrclass)
 }
 
 /*
- * convert hostname to DNS encoding
+ * Convert hostname to DNS encoding
  */
 void to_dns_name_enc(char* dnsformat, char* hostformat)
 {
-    size_t lock = 0, i;
+    size_t p = 0, i;
     strcat(hostformat, ".");
 
     for (i = 0; i < strlen(hostformat); i++)
     {
         if (hostformat[i] == '.')
         {
-            *dnsformat++ = i - lock;
-            for (; lock < i; lock++)
+            *dnsformat++ = i - p;
+            for (; p < i; p++)
             {
-                *dnsformat ++= hostformat[lock];
+                *dnsformat ++= hostformat[p];
             }
-            lock++;
+            p++;
         }
     }
     *dnsformat ++= '\0';
 }
 
-/* Processes one string in a DNS resource record.
- *
- * bstart (in):	pointer to the start of the DNS message (UDP payload)
- * bcur (in):	pointer to the currently processed position in a message.
-		This should point to the start of compressed or uncompressed
-		name string.
- * name (out):	buffer for storing the name string in dot-separated format
- *
- * returns:	updated position of bcur, pointing to the next position
- *		following the name
+/*
+ * Process one string from a resource record
  */
 uint8_t* process_name(uint8_t *bstart, uint8_t *bcur, char *name)
 {
@@ -662,7 +690,9 @@ uint8_t* process_name(uint8_t *bstart, uint8_t *bcur, char *name)
 	return bcur;
 }
 
-/* index of first bit (LSB) is 1 */
+/*
+ * Get bit from byte
+ */
 uint8_t get_bit(uint8_t byte, int bitidx)
 {
 	if (bitidx > 0 && bitidx <= 8)

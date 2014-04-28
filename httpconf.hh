@@ -49,26 +49,72 @@ typedef enum
 	UNSUPP_HF
 } http_hfield;
 
-/* class instead of global variables for thread-safety */
+/* HTTP configuration (class instead of global variables for thread-safety) */
 class http_conf
 {
 public:
 
 	/*
 	 * Constructor
+	 *
+	 * dnsservip: IP address of DNS server to use
 	 */
 	http_conf(const std::string dnsservip);
 
+	/*
+	 * String to HTTP protocol
+	 *
+	 * return: protocol enum value
+	 */
 	http_protocol to_prot(std::string str) const;
+
+	/*
+	 * HTTP protocol to string
+	 *
+	 * return: protocol as string
+	 */
 	std::string to_str(http_protocol prot) const;
 
+	/*
+	 * String to HTTP method
+	 *
+	 * return: method enum value
+	 */
 	http_method to_method(std::string str) const;
+
+	/*
+	 * HTTP method to string
+	 *
+	 * return: method as string
+	 */
 	std::string to_str(http_method method) const;
 
+	/*
+	 * String to status code
+	 *
+	 * return: status enum value
+	 */
 	http_status to_status(std::string str) const;
+
+	/*
+	 * Status code to string
+	 *
+	 * return: status as string
+	 */
 	std::string to_str(http_status status) const;
 
+	/*
+	 * String to header field
+	 *
+	 * return: header field enum value
+	 */
 	http_hfield to_hfield(std::string str) const;
+
+	/*
+	 * Header field to string
+	 *
+	 * return: header field as string
+	 */
 	std::string to_str(http_hfield hfield) const;
 
 	const http_protocol protocol; // protocol (version) to use
@@ -80,6 +126,9 @@ public:
 
 private:
 
+	/*
+	 * Initialize values into conversion maps
+	 */
 	void init_maps();
 
 	std::map<http_protocol, std::string> prot_to_str;

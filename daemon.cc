@@ -1,6 +1,5 @@
 #include <cstdio>
 #include <fcntl.h>
-#include <iostream>
 #include <signal.h>
 #include <stdlib.h>
 #include <syslog.h>

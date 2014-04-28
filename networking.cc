@@ -315,6 +315,9 @@ bool send_text_file(int sockfd, std::string servpath, std::string filename, size
 	return true;
 }
 
+/*
+ * Print address
+ */
 void print_address(const char *prefix, const struct addrinfo *res)
 {
 	/* slightly modified from lecture example */
