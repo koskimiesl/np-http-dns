@@ -4,6 +4,7 @@
 #define NETPROG_NETWORKING_HH
 
 #include <string>
+#include <sys/socket.h>
 
 /* Accept connection and set 5 second receive timeout for the connection
  *
@@ -16,7 +17,7 @@ int accept_connection(int listenfd);
  * return socket file descriptor */
 int create_and_listen(unsigned short port);
 
-int init_udp(struct sockaddr_in* destaddr, const char* destip, uint16_t destport);
+int init_udp(const char* destip, const char* destport, struct sockaddr** destaddr, socklen_t* addrlen);
 
 bool read_header(int sockfd, std::string delimiter, std::string& header);
 

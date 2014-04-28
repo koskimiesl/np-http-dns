@@ -14,7 +14,7 @@
 #include "networking.hh"
 
 #define UDPBUFSIZE 2048 // maximum datagram size sent and received
-#define DNSPORT 53 // well-known DNS port number
+#define DNSPORT "53" // well-known DNS port number
 
 struct dns_header
 {
@@ -56,8 +56,8 @@ struct dns_res_record
 };
 
 /* function prototypes */
-bool send_query(int sockfd, sockaddr_in* dest, std::string queryname);
-bool recv_response(int sockfd, sockaddr_in* dest, std::string& formedresp);
+bool send_query(int sockfd, struct sockaddr* destaddr, socklen_t addrlen, std::string queryname);
+bool recv_response(int sockfd, std::string& formedresp);
 void init_query_header(dns_header* header);
 void init_query_question(dns_question* question, std::string queryname);
 uint8_t* serialize_header(uint8_t* buffer, dns_header* source, size_t& msglen);
@@ -92,14 +92,16 @@ dns_query_response do_dns_query(std::string dnsservip, std::string queryname, st
 	}
 
 	int sockfd;
-	struct sockaddr_in dest;
-	if ((sockfd = init_udp(&dest, dnsservip.c_str(), DNSPORT)) < 0)
+	struct sockaddr* destaddr;
+	socklen_t addrlen;
+
+	if ((sockfd = init_udp(dnsservip.c_str(), DNSPORT, &destaddr, &addrlen)) < 0)
 	{
 		resp.status = dns_query_status::FAIL;
 		return resp;
 	}
 
-	if (!send_query(sockfd, &dest, queryname))
+	if (!send_query(sockfd, destaddr, addrlen, queryname))
 	{
 		if (close(sockfd) < 0) perror("close");
 		resp.status = dns_query_status::FAIL;
@@ -107,7 +109,7 @@ dns_query_response do_dns_query(std::string dnsservip, std::string queryname, st
 	}
 
 	std::string formedresp; // string to be returned as a response
-	if (!recv_response(sockfd, &dest, formedresp))
+	if (!recv_response(sockfd, formedresp))
 	{
 		if (close(sockfd) < 0) perror("close");
 		resp.status = dns_query_status::FAIL;
@@ -122,7 +124,7 @@ dns_query_response do_dns_query(std::string dnsservip, std::string queryname, st
 	return resp;
 }
 
-bool send_query(int sockfd, sockaddr_in* dest, std::string queryname)
+bool send_query(int sockfd, struct sockaddr* destaddr, socklen_t addrlen, std::string queryname)
 {
 	uint8_t msg[UDPBUFSIZE];
 	uint8_t* msgcur = msg; // address to write next
@@ -139,7 +141,7 @@ bool send_query(int sockfd, sockaddr_in* dest, std::string queryname)
 	msgcur = serialize_question(msgcur, &question, msglen);
 
 	ssize_t sent;
-	if ((sent = sendto(sockfd, msg, msglen, 0, (sockaddr*)dest, sizeof(sockaddr_in))) < 0)
+	if ((sent = sendto(sockfd, msg, msglen, 0, destaddr, addrlen)) < 0)
 	{
 		perror("sendto");
 		return false;
@@ -148,12 +150,11 @@ bool send_query(int sockfd, sockaddr_in* dest, std::string queryname)
 	return true;
 }
 
-bool recv_response(int sockfd, sockaddr_in* dest, std::string& formedresp)
+bool recv_response(int sockfd, std::string& formedresp)
 {
 	uint8_t udpmsg[UDPBUFSIZE];
 	ssize_t recvd;
-	socklen_t addrlen = sizeof(sockaddr_in);
-	if ((recvd = recvfrom(sockfd, udpmsg, UDPBUFSIZE, 0, (sockaddr*)dest, &addrlen)) < 0)
+	if ((recvd = recvfrom(sockfd, udpmsg, UDPBUFSIZE, 0, NULL, NULL)) < 0)
 	{
 		perror("recvfrom");
 		return false;
@@ -170,6 +171,10 @@ bool recv_response(int sockfd, sockaddr_in* dest, std::string& formedresp)
 	/* construct header structure based on received data */
 	struct dns_header header;
 	msgcur = deserialize_header(msgcur, &header);
+
+	/* check response code */
+	if (header.rcode != 0)
+		return false; // error, no need to deserialize the rest
 
 	/* construct question structures based on received data */
 	std::vector<dns_question> questions;

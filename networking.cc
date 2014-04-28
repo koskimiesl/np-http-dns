@@ -5,7 +5,6 @@
 #include <iostream>
 #include <netdb.h>
 #include <netinet/in.h>
-#include <sys/socket.h>
 #include <unistd.h>
 
 #include "networking.hh"
@@ -29,7 +28,7 @@ int accept_connection(int listenfd)
 	struct timeval tv;
 	tv.tv_sec = 5;
 	tv.tv_usec = 0;
-	if (setsockopt(connfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(struct timeval)) < 0)
+	if (setsockopt(connfd, SOL_SOCKET, SO_RCVTIMEO, (char*)&tv, sizeof(struct timeval)) < 0)
 	{
 		perror("setsockopt");
 		return -1;
@@ -75,19 +74,52 @@ int create_and_listen(unsigned short port)
 	return listenfd;
 }
 
-int init_udp(struct sockaddr_in* destaddr, const char* destip, uint16_t destport)
+int init_udp(const char* destip, const char* destport, struct sockaddr** destaddr, socklen_t* addrlen)
 {
-	memset(destaddr, 0, sizeof(struct sockaddr_in));
-	destaddr->sin_family = AF_INET;
-	destaddr->sin_port = htons(destport);
-	destaddr->sin_addr.s_addr = inet_addr(destip);
+	int	sockfd, n;
+	struct addrinfo hints, *res, *ressave;
 
-	int sockfd;
-	if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
+	memset(&hints, 0, sizeof(struct addrinfo));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_DGRAM;
+
+	if ((n = getaddrinfo(destip, destport, &hints, &res)) != 0)
 	{
-		perror("socket");
+		fprintf(stderr, "init_udp error for %s, %s: %s\n", destip, destport, gai_strerror(n));
+	    return -1;
+	}
+	ressave = res;
+
+	do
+	{
+		sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+	    if (sockfd < 0)
+	    	continue; /* ignore this one */
+
+		break; // yes, this is pretty dumb loop :-)
+	} while ((res = res->ai_next) != NULL);
+
+	freeaddrinfo(ressave);
+
+	if (res == NULL)
+	{
+		fprintf(stderr, "Could not open socket\n");
 		return -1;
 	}
+
+	/* set 5 second receive timeout */
+	struct timeval tv;
+	tv.tv_sec = 5;
+	tv.tv_usec = 0;
+	if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (char*)&tv, sizeof(struct timeval)) < 0)
+	{
+		perror("setsockopt");
+		return -1;
+	}
+
+	*destaddr = res->ai_addr;
+	*addrlen = res->ai_addrlen;
+
 	return sockfd;
 }
 
