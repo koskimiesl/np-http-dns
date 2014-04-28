@@ -136,7 +136,6 @@ bool read_header(int sockfd, std::string delimiter, std::string& header)
 		foundidx = readtotal.find(delimiter);
 		if (foundidx != std::string::npos)
 		{
-			std::cout << "delimiter found at index " << foundidx << std::endl;
 			delimiterfound = true;
 			header = readtotal.substr(0, foundidx + delimiter.length()); // include delimiter to header
 		}

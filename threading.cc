@@ -3,12 +3,15 @@
 
 #include "threading.hh"
 
+bool handle_join(thread_queue* tqueue);
+
 void* cleaner(void* queue)
 {
 	thread_queue* tqueue = (thread_queue*)queue;
 	while (1)
 	{
 		/* call pthread_join for completed request processing threads, clean up resources */
+
 		if ((errno = pthread_mutex_lock(&tqueue->mutex)) != 0)
 		{
 			perror("pthread_mutex_lock");
@@ -16,26 +19,11 @@ void* cleaner(void* queue)
 		}
 		while (!tqueue->queue.empty()) // if queue initially has items, do cleaning before waiting condition
 		{
-			void* result;
-			if ((errno = pthread_join(tqueue->queue.front(), &result)) != 0)
+			if (!handle_join(tqueue))
 			{
-				perror("pthread_join");
+				std::cerr << "cleaner: failed to handle join" << std::endl;
 				return queue;
 			}
-			process_req_params* parameters = (process_req_params*)result;
-			std::cout << "cleaner: thread with ID " << tqueue->queue.front() << " terminated (with parameters: "
-					  << "connfd: " << parameters->connfd
-					  << ", servpath: " << parameters->servpath
-					  << ", dnsservip: " << parameters->dnsservip
-					  << ", username: " << parameters->username
-					  << ", errors: ";
-			if (!parameters->errors)
-				std::cout << "no";
-			else
-				std::cout << "yes";
-			std::cout << ")" << std::endl;
-			delete parameters; // free the memory that was allocated before starting the thread
-			tqueue->queue.pop();
 		}
 		while (tqueue->queue.empty()) // if queue is empty, wait for condition (i.e. when queue has items)
 		{
@@ -47,26 +35,11 @@ void* cleaner(void* queue)
 			std::cout << "cleaner: condition signal received (i.e. queue has items)" << std::endl;
 			while (!tqueue->queue.empty())
 			{
-				void* result;
-				if ((errno = pthread_join(tqueue->queue.front(), &result)) != 0)
+				if (!handle_join(tqueue))
 				{
-					perror("pthread_join");
+					std::cerr << "cleaner: failed to handle join" << std::endl;
 					return queue;
 				}
-				process_req_params* parameters = (process_req_params*)result;
-				std::cout << "cleaner: thread with ID " << tqueue->queue.front() << " terminated (parameters: "
-						  << "connfd: " << parameters->connfd
-						  << ", servpath: " << parameters->servpath
-						  << ", dnsservip: " << parameters->dnsservip
-						  << ", username: " << parameters->username
-						  << ", errors: ";
-				if (!parameters->errors)
-					std::cout << "no";
-				else
-					std::cout << "yes";
-				std::cout << ")" << std::endl;
-				delete parameters; // free the memory that was allocated before starting the thread
-				tqueue->queue.pop();
 			}
 		}
 		if ((errno = pthread_mutex_unlock(&tqueue->mutex)) != 0)
@@ -116,4 +89,29 @@ int start_thread(void* (*routine)(void*), void* arg, std::string name)
 	}
 	std::cout << "started '" << name << "' thread with ID " << tid << std::endl;
 	return 0;
+}
+
+bool handle_join(thread_queue* tqueue)
+{
+	void* result;
+	if ((errno = pthread_join(tqueue->queue.front(), &result)) != 0)
+	{
+		perror("pthread_join");
+		return false;
+	}
+	process_req_params* parameters = (process_req_params*)result;
+	std::cout << "cleaner: thread with ID " << tqueue->queue.front() << " terminated (with parameters: "
+			  << "connfd: " << parameters->connfd
+			  << ", servpath: " << parameters->servpath
+			  << ", dnsservip: " << parameters->dnsservip
+			  << ", username: " << parameters->username
+			  << ", errors: ";
+	if (!parameters->errors)
+		std::cout << "no";
+	else
+		std::cout << "yes";
+	std::cout << ")" << std::endl;
+	delete parameters; // free the memory that was allocated before starting the thread
+	tqueue->queue.pop();
+	return true;
 }

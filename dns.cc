@@ -64,7 +64,7 @@ uint8_t* serialize_header(uint8_t* buffer, dns_header* source, size_t& msglen);
 uint8_t* serialize_question(uint8_t* buffer, dns_question* source, size_t& msglen);
 uint8_t* deserialize_header(uint8_t* headerstart, dns_header* header);
 uint8_t* deserialize_question(uint8_t* msgstart, uint8_t* quesstart, dns_question* question);
-uint8_t* deserialize_res_rec(uint8_t* msgstart, uint8_t* rrstart, dns_res_record* resrec);
+uint8_t* deserialize_res_rec(uint8_t* msgstart, uint8_t* rrstart, dns_res_record* resrec, bool& supported);
 std::string form_response(const std::vector<dns_res_record>& answers);
 std::string remove_last_dot(std::string str);
 std::string addr_type_to_str(uint16_t addrtype);
@@ -120,7 +120,7 @@ dns_query_response do_dns_query(std::string dnsservip, std::string queryname, st
 
 	resp.status = dns_query_status::SUCCESS;
 	resp.response = formedresp;
-	resp.resp_len = strlen(resp.response.c_str()) + 1; // include terminating null character
+	resp.resp_len = strlen(resp.response.c_str());
 	return resp;
 }
 
@@ -186,15 +186,16 @@ bool recv_response(int sockfd, std::string& formedresp)
 		questions.push_back(question);
 	}
 
-	/* construct resource record structures for answers based on received data */
+	/* construct resource record structures for supported answer types based on received data */
 	std::vector<dns_res_record> answerresrecs;
 	uint16_t ai;
 	for (ai = 0; ai < header.ancount; ai++)
 	{
 		dns_res_record answerresrec;
-		if ((msgcur = deserialize_res_rec(udpmsg, msgcur, &answerresrec)) == NULL)
-			return false;
-		answerresrecs.push_back(answerresrec);
+		bool supported;
+		msgcur = deserialize_res_rec(udpmsg, msgcur, &answerresrec, supported);
+		if (supported)
+			answerresrecs.push_back(answerresrec);
 	}
 
 	/* form response string from answers */
@@ -233,7 +234,6 @@ void init_query_question(dns_question* question, std::string queryname)
 	strcpy(host, queryname.c_str());
 	char qname[300];
 	to_dns_name_enc(qname, host);
-	std::cout << "qname: " << qname << std::endl;
 	question->qname = qname;
 	question->qtype = 1; // type A
 	question->qclass = 1; // class IN
@@ -287,26 +287,20 @@ uint8_t* serialize_header(uint8_t* buffer, dns_header* source, size_t& msglen)
 	bufptr += n;
 	msglen += n;
 
-
 	/* convert count fields to network byte order, copy to buffer */
-
 	n = sizeof(uint16_t);
-
 	uint16_t qdcountnbo = htons(source->qdcount);
 	memcpy(bufptr, &qdcountnbo, n);
 	bufptr += n;
 	msglen += n;
-
 	uint16_t ancountnbo = htons(source->ancount);
 	memcpy(bufptr, &ancountnbo, n);
 	bufptr += n;
 	msglen += n;
-
 	uint16_t nscountnbo = htons(source->nscount);
 	memcpy(bufptr, &nscountnbo, n);
 	bufptr += n;
 	msglen += n;
-
 	uint16_t arcountnbo = htons(source->arcount);
 	memcpy(bufptr, &arcountnbo, n);
 	bufptr += n;
@@ -349,19 +343,20 @@ uint8_t* serialize_question(uint8_t* buffer, dns_question* source, size_t& msgle
 
 uint8_t* deserialize_header(uint8_t* headerstart, dns_header* header)
 {
+	std::cout << std::endl << "deserializing DNS header:" << std::endl;
 	uint8_t* msgcur = headerstart;
 
 	/* convert id to host byte order, set to structure */
 	uint16_t idnbo;
 	memcpy(&idnbo, msgcur, sizeof(uint16_t));
 	header->id = ntohs(idnbo);
-	std::cout << "read id: " << header->id << std::endl;
+	std::cout << "id: " << header->id << std::endl;
 	msgcur += sizeof(uint16_t);
 
 	/* check byte from qr field to rd field, set bits to structure */
 	uint8_t qrtord = *msgcur;
 	header->qr = get_bit(qrtord, 8);
-	std::cout << "read qr: " << (unsigned short)header->qr << std::endl;
+	std::cout << "qr: " << (unsigned short)header->qr << std::endl;
 	uint8_t opcode = 0x00;
 	opcode += get_bit(qrtord, 7);
 	opcode <<= 1;
@@ -371,26 +366,26 @@ uint8_t* deserialize_header(uint8_t* headerstart, dns_header* header)
 	opcode <<= 1;
 	opcode += get_bit(qrtord, 4);
 	header->opcode = opcode;
-	std::cout << "read opcode: " << (unsigned short)header->opcode << std::endl;
+	std::cout << "opcode: " << (unsigned short)header->opcode << std::endl;
 	header->aa = get_bit(qrtord, 3);
-	std::cout << "read aa: " << (unsigned short)header->aa << std::endl;
+	std::cout << "aa: " << (unsigned short)header->aa << std::endl;
 	header->tc = get_bit(qrtord, 2);
-	std::cout << "read tc: " << (unsigned short)header->tc << std::endl;
+	std::cout << "tc: " << (unsigned short)header->tc << std::endl;
 	header->rd = get_bit(qrtord, 1);
-	std::cout << "read rd: " << (unsigned short)header->rd << std::endl;
+	std::cout << "rd: " << (unsigned short)header->rd << std::endl;
 	msgcur += sizeof(uint8_t);
 
 
 	/* check byte from ra field to rcode field, set bits to structure */
 	uint8_t ratorcode = *msgcur;
 	header->ra = get_bit(ratorcode, 8);
-	std::cout << "read ra: " << (unsigned short)header->ra << std::endl;
+	std::cout << "ra: " << (unsigned short)header->ra << std::endl;
 	header->z = get_bit(ratorcode, 7);
-	std::cout << "read z: " << (unsigned short)header->z << std::endl;
+	std::cout << "z: " << (unsigned short)header->z << std::endl;
 	header->ad = get_bit(ratorcode, 6);
-	std::cout << "read ad: " << (unsigned short)header->ad << std::endl;
+	std::cout << "ad: " << (unsigned short)header->ad << std::endl;
 	header->cd = get_bit(ratorcode, 5);
-	std::cout << "read cd: " << (unsigned short)header->cd << std::endl;
+	std::cout << "cd: " << (unsigned short)header->cd << std::endl;
 	uint8_t rcode = 0x00;
 	rcode += get_bit(ratorcode, 4);
 	rcode <<= 1;
@@ -400,35 +395,35 @@ uint8_t* deserialize_header(uint8_t* headerstart, dns_header* header)
 	rcode <<= 1;
 	rcode += get_bit(ratorcode, 1);
 	header->rcode = rcode;
-	std::cout << "read rcode: " << (unsigned short)header->rcode << std::endl;
+	std::cout << "rcode: " << (unsigned short)header->rcode << std::endl;
 	msgcur += sizeof(uint8_t);
 
 	/* convert qdcount to host byte order, set to structure */
 	uint16_t qdcountnbo;
 	memcpy(&qdcountnbo, msgcur, sizeof(uint16_t));
 	header->qdcount = ntohs(qdcountnbo);
-	std::cout << "read qdcount: " << header->qdcount << std::endl;
+	std::cout << "qdcount: " << header->qdcount << std::endl;
 	msgcur += sizeof(uint16_t);
 
 	/* convert ancount to host byte order, set to structure */
 	uint16_t ancountnbo;
 	memcpy(&ancountnbo, msgcur, sizeof(uint16_t));
 	header->ancount = ntohs(ancountnbo);
-	std::cout << "read ancount: " << header->ancount << std::endl;
+	std::cout << "ancount: " << header->ancount << std::endl;
 	msgcur += sizeof(uint16_t);
 
 	/* convert nscount to host byte order, set to structure */
 	uint16_t nscountnbo;
 	memcpy(&nscountnbo, msgcur, sizeof(uint16_t));
 	header->nscount = ntohs(nscountnbo);
-	std::cout << "read nscount: " << header->nscount << std::endl;
+	std::cout << "nscount: " << header->nscount << std::endl;
 	msgcur += sizeof(uint16_t);
 
 	/* convert arcount to host byte order, set to structure */
 	uint16_t arcountnbo;
 	memcpy(&arcountnbo, msgcur, sizeof(uint16_t));
 	header->arcount = ntohs(arcountnbo);
-	std::cout << "read arcount: " << header->arcount << std::endl;
+	std::cout << "arcount: " << header->arcount << std::endl;
 	msgcur += sizeof(uint16_t);
 
 	return msgcur;
@@ -436,67 +431,69 @@ uint8_t* deserialize_header(uint8_t* headerstart, dns_header* header)
 
 uint8_t* deserialize_question(uint8_t* msgstart, uint8_t* quesstart, dns_question* question)
 {
+	std::cout << std::endl << "deserializing DNS question:" << std::endl;
 	uint8_t* msgcur = quesstart;
 
 	/* process name */
 	char qname[1024];
 	msgcur = process_name(msgstart, msgcur, qname);
 	question->qname = qname;
-	std::cout << "got qname: " << question->qname << std::endl;
+	std::cout << "qname: " << question->qname << std::endl;
 
 	/* process type */
 	uint16_t qtypenbo;
 	memcpy(&qtypenbo, msgcur, sizeof(uint16_t));
 	question->qtype = ntohs(qtypenbo);
-	std::cout << "got qtype: " << question->qtype << std::endl;
+	std::cout << "qtype: " << question->qtype << std::endl;
 	msgcur += sizeof(uint16_t);
 
 	/* process class */
 	uint16_t qclassnbo;
 	memcpy(&qclassnbo, msgcur, sizeof(uint16_t));
 	question->qclass = ntohs(qclassnbo);
-	std::cout << "got qclass: " << question->qclass << std::endl;
+	std::cout << "qclass: " << question->qclass << std::endl;
 	msgcur += sizeof(uint16_t);
 
 	return msgcur;
 }
 
-uint8_t* deserialize_res_rec(uint8_t* msgstart, uint8_t* rrstart, dns_res_record* resrec)
+uint8_t* deserialize_res_rec(uint8_t* msgstart, uint8_t* rrstart, dns_res_record* resrec, bool& supported)
 {
+	std::cout << std::endl << "deserializing DNS resource record:" << std::endl;
 	uint8_t* msgcur = rrstart;
 
 	/* process name */
 	char rname[1024];
 	msgcur = process_name(msgstart, msgcur, rname);
 	resrec->rname = rname;
-	std::cout << "got rname: " << resrec->rname << std::endl;
+	std::cout << "rname: " << resrec->rname << std::endl;
 
 	/* process type */
 	uint16_t rtypenbo;
 	memcpy(&rtypenbo, msgcur, sizeof(uint16_t));
 	resrec->rtype = ntohs(rtypenbo);
-	std::cout << "got rtype: " << resrec->rtype << std::endl;
+	std::cout << "rtype: " << resrec->rtype << std::endl;
 	msgcur += sizeof(uint16_t);
 
 	/* process class */
 	uint16_t rclassnbo;
 	memcpy(&rclassnbo, msgcur, sizeof(uint16_t));
 	resrec->rclass = ntohs(rclassnbo);
-	std::cout << "got rclass: " << resrec->rclass << std::endl;
+	std::cout << "rclass: " << resrec->rclass << std::endl;
 	msgcur += sizeof(uint16_t);
 
 	/* process ttl */
 	uint32_t rttlnbo;
 	memcpy(&rttlnbo, msgcur, sizeof(uint32_t));
 	resrec->rttl = ntohl(rttlnbo);
-	std::cout << "got rttl: " << resrec->rttl << std::endl;
+	std::cout << "rttl: " << resrec->rttl << std::endl;
 	msgcur += sizeof(uint32_t);
 
 	/* process data length */
 	uint16_t rdlengthnbo;
 	memcpy(&rdlengthnbo, msgcur, sizeof(uint16_t));
 	resrec->rdlength = ntohs(rdlengthnbo);
-	std::cout << "got rdlength: " << resrec->rdlength << std::endl;
+	std::cout << "rdlength: " << resrec->rdlength << std::endl;
 	msgcur += sizeof(uint16_t);
 
 	/* process data */
@@ -507,13 +504,15 @@ uint8_t* deserialize_res_rec(uint8_t* msgstart, uint8_t* rrstart, dns_res_record
 		for (i = 0; i < 4; i++)
 			rdata.push_back(msgcur[i]);
 		resrec->rdata = rdata;
-		std::cout << "got rdata: " << ipv4_addr_to_str(resrec->rdata) << std::endl;
+		std::cout << "rdata: " << ipv4_addr_to_str(resrec->rdata) << std::endl;
 		msgcur += 4;
+		supported = true;
 	}
 	else
 	{
-		std::cerr << "unsupported combination of resource type, class and data length" << std::endl;
-		return NULL;
+		std::cout << "unsupported combination of type, class and data length, skipping data" << std::endl;
+		msgcur += resrec->rdlength; // skip unsupported data
+		supported = false;
 	}
 
 	return msgcur;
